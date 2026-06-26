@@ -70,6 +70,10 @@ memex query "text" [-k N] # layered hybrid recall, printed for a human
 memex dream               # consolidation pass → <scope>/.memex/reports/REPORT-<date>.md
 memex stats               # index size + per-memory recall strength, per scope
 memex doctor              # resolved scopes + sqlite-vec / embedder check
+memex maintain            # index + dream the global scope and every project (cron entry)
+memex distill <jsonl>     # extract memory candidates from a transcript into staging
+memex candidates          # list staged candidates awaiting review
+memex accept <name>       # promote a staged candidate into its scope's memory dir
 ```
 
 ## Wire up the hooks (always-on context) — global
@@ -105,28 +109,69 @@ one config serves all projects:
 }
 ```
 
+A third hook, **SessionEnd**, drives distillation (below) and is inert until
+enabled:
+
+```json
+"SessionEnd": [
+  { "hooks": [{ "type": "command",
+    "command": "uv run --project \"$HOME/.claude/memex\" python \"$HOME/.claude/memex/hooks/session_end.py\"" }]}]
+```
+
 * **UserPromptSubmit** runs layered hybrid recall for the prompt and injects the
   top-K memories (across both scopes) into context. It degrades silently — a
   missing index or slow embedder prints nothing and never blocks the prompt.
 * **Stop** runs an incremental re-index of every active scope so memories written
   during the turn are searchable next time. Only changed files are re-embedded.
+* **SessionEnd** distils the finished session into staged candidates, but only
+  when `MEMEX_DISTILL_ENABLED=1` (it costs tokens). Off by default.
 
 Cost note: a global `UserPromptSubmit` hook shells out on every prompt in every
 project. The work is small and degrades silently where there is no index, but it
 is not free. Remove the block to disable.
 
+## Transcript distillation (the write side)
+
+`memex` can read a finished conversation and propose new memories. The flow is
+review-gated — nothing is written into the live store without a human accept:
+
+1. **SessionEnd hook** (when `MEMEX_DISTILL_ENABLED=1`) condenses the transcript,
+   asks a small model (`MEMEX_DISTILL_MODEL`, default Haiku) for durable facts,
+   and writes them to `<scope>/.memex/candidates/` as *proposed* memories. The
+   model assigns each a scope: global for cross-project facts, project otherwise.
+2. **Review**: `memex candidates` lists what was staged.
+3. **Accept**: `memex accept <name>` moves a candidate into its scope's memory
+   directory (and strips the `proposed` marker); `memex index` then makes it
+   searchable. To reject, delete the staged file.
+
+Run it by hand on any transcript: `memex distill path/to/session.jsonl`. The
+model call goes through the `claude` CLI (no API key); if the CLI is missing it
+stages nothing and exits cleanly.
+
 ## Schedule the dream cycle
 
-The consolidation pass runs off the critical path. Pick one:
+`memex maintain` re-indexes and runs the dream pass over the global scope and
+every project under `~/.claude/projects/` — the entry point for a scheduled run
+(a session's `Stop` hook keeps its own project fresh; maintenance covers the rest
+and produces the reports). Pick one scheduler:
 
-**Local cron** (nightly at 03:00, both scopes):
+**launchd** (macOS, nightly at 03:00) — install the bundled agent:
 
-```cron
-0 3 * * * uv run --project $HOME/.claude/memex memex dream >> /tmp/memex-dream.log 2>&1
+```bash
+sed "s#HOME_PLACEHOLDER#$HOME#g" ~/.claude/memex/scripts/com.memex.dream.plist \
+  > ~/Library/LaunchAgents/com.memex.dream.plist
+launchctl load ~/Library/LaunchAgents/com.memex.dream.plist
+# remove with: launchctl unload ~/Library/LaunchAgents/com.memex.dream.plist
 ```
 
-**Claude Code routine** — use the `/schedule` skill to run `memex dream` daily and
-surface the report.
+**Local cron**:
+
+```cron
+0 3 * * * $HOME/.claude/memex/scripts/run-maintenance.sh
+```
+
+**Claude Code routine** — use the `/schedule` skill to run `memex maintain` daily
+and surface the reports.
 
 The pass is **advisory**: it writes a dated report per scope (candidate
 duplicates, broken `[[wikilinks]]`, memories missing from `MEMORY.md`, salience
@@ -145,17 +190,15 @@ ranking) and updates salience scores, but never edits or deletes a memory file.
 | `MEMEX_DECAY_HALF_LIFE` | `30` | Days; recency half-life |
 | `MEMEX_DECAY_FLOOR` / `_CEILING` | `0.3` / `1.5` | Decay multiplier bounds |
 | `MEMEX_DEDUP_THRESHOLD` | `0.92` | Cosine similarity for dup flagging |
+| `MEMEX_DISTILL_ENABLED` | unset (off) | `1` to enable SessionEnd distillation |
+| `MEMEX_DISTILL_MODEL` | `claude-haiku-4-5-20251001` | Model for distillation |
 
 ## Not yet wired (deliberate extension points)
 
-* **Transcript distillation** — the `Stop` hook re-indexes existing files but does
-  not yet read the conversation transcript and *write new* memory files; that
-  needs an LLM call and a review policy. The transcript path is on the hook
-  payload (`transcript_path`) for whoever implements it. A natural design routes
-  cross-project facts (style, standards) to the global scope and the rest to the
-  project scope.
 * **LLM contradiction detection** — `dream` flags near-duplicates by cosine
   similarity; semantic contradiction ("two memories give opposite advice") would
   need an LLM judge over the flagged pairs.
+* **Auto-accept policy** — distillation stages candidates for manual review.
+  A confidence threshold could auto-accept high-signal global facts.
 * **Embedding privacy** — the default backend is local, so memory contents never
   leave the machine. Swapping in an API embedder would change that.

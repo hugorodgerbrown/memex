@@ -95,7 +95,7 @@ class Store:
                 embedding FLOAT[{self._config.embed_dim}]
             );
             CREATE VIRTUAL TABLE IF NOT EXISTS fts_memories USING fts5(
-                name, description, body, content=''
+                name, description, body
             );
             """
         )

@@ -1,27 +1,60 @@
 # Memex — a layered long-term memory store for Claude Code.
 #
-# This is a standalone uv project, deliberately separate from the host Django
-# application's pyproject so the memory tooling never pollutes the app's
-# dependency set. Run it with `uv run --project .claude/memex memex ...`.
+# A standalone tool, installed once at ~/.claude/memex and shared across every
+# project. Run it with `uv run --project ~/.claude/memex memex ...`.
 [project]
 name = "memex"
 version = "0.1.0"
 description = "Hybrid (vector + keyword + graph) long-term memory for Claude Code"
+readme = "README.md"
 requires-python = ">=3.14"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Hugo Rodger-Brown", email = "hugo@rodger-brown.com" }]
+keywords = [
+    "claude-code",
+    "memory",
+    "long-term-memory",
+    "rag",
+    "embeddings",
+    "sqlite-vec",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Software Development :: Libraries",
+    "Topic :: Text Processing :: Indexing",
+]
 dependencies = [
     "sqlite-vec>=0.1.6",
     "numpy>=1.26",
     "pyyaml>=6.0",
 ]
 
+[project.urls]
+Homepage = "https://github.com/hugorodgerbrown/memex"
+Repository = "https://github.com/hugorodgerbrown/memex"
+Issues = "https://github.com/hugorodgerbrown/memex/issues"
+
 [project.optional-dependencies]
 # The local embedding backend. Heavy (onnxruntime + a model download), so it is
-# opt-in: `uv sync --project .claude/memex --extra fastembed`. The offline
-# `hash` backend needs none of this and is used for tests / CI smoke runs.
+# opt-in: `uv sync --extra fastembed`. The offline `hash` backend needs none of
+# this and is what the tests use.
 fastembed = ["fastembed>=0.4"]
 
 [project.scripts]
 memex = "memex.cli:main"
+
+[dependency-groups]
+# Development tooling, installed with `uv sync --group dev`. The test suite runs
+# entirely on the offline `hash` backend, so it needs neither fastembed nor a
+# network.
+dev = [
+    "pytest>=8",
+    "ruff>=0.8",
+]
 
 [build-system]
 requires = ["hatchling"]
@@ -29,3 +62,18 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/memex"]
+
+[tool.ruff]
+target-version = "py314"
+line-length = 88
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "C4", "S"]
+
+[tool.ruff.lint.per-file-ignores]
+# Assertions are expected in the test suite.
+"tests/**" = ["S101"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"

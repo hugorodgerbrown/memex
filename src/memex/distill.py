@@ -93,7 +93,7 @@ def build_prompt(convo: str, *, has_project: bool) -> str:
         "long-term memory store. Read the conversation below and return ONLY a "
         "JSON array (no prose, no code fence) of memory objects worth keeping for "
         "future sessions.\n\n"
-        "Each object: {\"scope\", \"type\", \"name\", \"description\", \"body\"}.\n"
+        'Each object: {"scope", "type", "name", "description", "body"}.\n'
         f"- scope: one of {scopes}. Use global for cross-project facts (style, "
         "standards, tooling preferences); project for facts specific to this "
         "codebase.\n"
@@ -137,7 +137,9 @@ def parse_candidates(text: str, *, has_project: bool) -> list[Candidate]:
         if not name or not body:
             continue
         candidates.append(
-            Candidate(scope=scope, name=name, description=description, mtype=mtype, body=body)
+            Candidate(
+                scope=scope, name=name, description=description, mtype=mtype, body=body
+            )
         )
     return candidates
 
@@ -155,7 +157,9 @@ def call_model(prompt: str, model: str) -> str | None:
     if binary is None:
         return None
     try:
-        result = subprocess.run(
+        # The binary is resolved from PATH and the arguments are fixed plus a
+        # config-controlled model name; no shell and no untrusted input.
+        result = subprocess.run(  # noqa: S603
             [binary, "-p", "--model", model, "--output-format", "json"],
             input=prompt,
             capture_output=True,
@@ -163,7 +167,7 @@ def call_model(prompt: str, model: str) -> str | None:
             timeout=120,
             check=False,
         )
-    except (OSError, subprocess.SubprocessError):
+    except OSError, subprocess.SubprocessError:
         return None
     if result.returncode != 0:
         return None
@@ -193,7 +197,9 @@ def _candidates_dir(scope: Scope) -> Path:
     return scope.db_path.parent / "candidates"
 
 
-def stage(config: Config, candidates: list[Candidate], *, session_id: str) -> list[Path]:
+def stage(
+    config: Config, candidates: list[Candidate], *, session_id: str
+) -> list[Path]:
     """Write candidates as proposed memory files; return the paths written."""
     written: list[Path] = []
     for candidate in candidates:

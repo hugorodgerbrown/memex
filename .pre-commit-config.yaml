@@ -1,0 +1,9 @@
+# Pre-commit hooks for Memex. Install with: pre-commit install
+# Runs ruff (lint + format) over staged files before each commit.
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.8.6
+    hooks:
+      - id: ruff
+        args: [--fix]
+      - id: ruff-format

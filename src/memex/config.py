@@ -56,6 +56,7 @@ class Config:
     decay_floor: float
     decay_ceiling: float
     dedup_threshold: float
+    distill_model: str
 
     def scope(self, name: str) -> Scope | None:
         """Return the scope with ``name``, or ``None`` if it is not active."""
@@ -94,18 +95,49 @@ def _project_memory_dir(cwd: str | None) -> Path | None:
     return _PROJECTS_ROOT / mangle(project_root) / "memory"
 
 
+def _global_scope() -> Scope:
+    """Build the global scope from the environment or its default location."""
+    global_dir = Path(
+        os.environ.get("MEMEX_GLOBAL_MEMORY_DIR", str(_DEFAULT_GLOBAL_DIR))
+    ).expanduser()
+    return Scope("global", global_dir, global_dir / ".memex" / "index.db")
+
+
+def _has_memories(directory: Path) -> bool:
+    """Whether ``directory`` holds at least one indexable memory file."""
+    if not directory.is_dir():
+        return False
+    return any(
+        path.name != "MEMORY.md" and not path.name.startswith(".")
+        for path in directory.glob("*.md")
+    )
+
+
+def discover_project_scopes() -> list[Scope]:
+    """Return a scope for every project memory directory with memories.
+
+    Used by the scheduled maintenance run, which has no single session cwd and so
+    must sweep all known projects rather than resolve one.
+    """
+    if not _PROJECTS_ROOT.is_dir():
+        return []
+    scopes: list[Scope] = []
+    for project_dir in sorted(_PROJECTS_ROOT.iterdir()):
+        memory_dir = project_dir / "memory"
+        if _has_memories(memory_dir):
+            scopes.append(
+                Scope(project_dir.name, memory_dir, memory_dir / ".memex" / "index.db")
+            )
+    return scopes
+
+
 def load(cwd: str | None = None) -> Config:
     """Build a :class:`Config`, resolving the active scopes for ``cwd``.
 
     ``cwd`` is the session working directory (the hooks read it from their
     payload). When omitted, only the global scope is active.
     """
-    global_dir = Path(
-        os.environ.get("MEMEX_GLOBAL_MEMORY_DIR", str(_DEFAULT_GLOBAL_DIR))
-    ).expanduser()
-    scopes = [
-        Scope("global", global_dir, global_dir / ".memex" / "index.db"),
-    ]
+    scopes = [_global_scope()]
 
     project_dir = _project_memory_dir(cwd)
     if project_dir is not None:
@@ -113,6 +145,19 @@ def load(cwd: str | None = None) -> Config:
             Scope("project", project_dir, project_dir / ".memex" / "index.db")
         )
 
+    return _with_tunables(scopes)
+
+
+def load_all() -> Config:
+    """Build a :class:`Config` spanning the global scope and every project.
+
+    This is the entry point for scheduled maintenance (``memex maintain``).
+    """
+    return _with_tunables([_global_scope(), *discover_project_scopes()])
+
+
+def _with_tunables(scopes: list[Scope]) -> Config:
+    """Assemble a :class:`Config` from ``scopes`` plus the shared tunables."""
     return Config(
         scopes=scopes,
         embed_backend=os.environ.get("MEMEX_EMBED_BACKEND", "fastembed"),
@@ -124,4 +169,7 @@ def load(cwd: str | None = None) -> Config:
         decay_floor=float(os.environ.get("MEMEX_DECAY_FLOOR", "0.3")),
         decay_ceiling=float(os.environ.get("MEMEX_DECAY_CEILING", "1.5")),
         dedup_threshold=float(os.environ.get("MEMEX_DEDUP_THRESHOLD", "0.92")),
+        distill_model=os.environ.get(
+            "MEMEX_DISTILL_MODEL", "claude-haiku-4-5-20251001"
+        ),
     )

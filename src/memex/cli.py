@@ -16,8 +16,10 @@ import argparse
 import datetime as dt
 import os
 import sys
+from pathlib import Path
 
 from . import config as config_module
+from . import distill as distill_module
 from . import dream as dream_module
 from . import embeddings, index, retrieve
 from .config import Config, Scope
@@ -56,6 +58,22 @@ def _build_parser() -> argparse.ArgumentParser:
     sub.add_parser("dream", help="run the consolidation pass and write reports")
     sub.add_parser("stats", help="show index size and recall strength")
     sub.add_parser("doctor", help="show scopes and verify embedder / sqlite-vec")
+
+    p_distill = sub.add_parser(
+        "distill", help="extract memory candidates from a transcript into staging"
+    )
+    p_distill.add_argument("transcript", help="path to the session transcript JSONL")
+    p_distill.add_argument(
+        "--session-id", default="manual", help="origin session id for provenance"
+    )
+
+    sub.add_parser(
+        "maintain", help="index + dream every scope and project (for cron/launchd)"
+    )
+    sub.add_parser("candidates", help="list staged memory candidates awaiting review")
+
+    p_accept = sub.add_parser("accept", help="promote a staged candidate into memory")
+    p_accept.add_argument("name", help="the candidate slug to accept")
     return parser
 
 
@@ -162,9 +180,53 @@ def _cmd_doctor(cfg: Config) -> int:
     return 0
 
 
+def _cmd_maintain(cfg: Config) -> int:
+    """Index and dream every scope and project; the scheduled entry point."""
+    _cmd_index(cfg, cfg.scopes, rebuild=False)
+    return _cmd_dream(cfg, cfg.scopes)
+
+
+def _cmd_distill(cfg: Config, transcript: str, session_id: str) -> int:
+    """Extract memory candidates from a transcript and stage them for review."""
+    candidates = distill_module.extract(cfg, Path(transcript), cfg.distill_model)
+    if not candidates:
+        print("no candidates extracted (or the claude CLI was unavailable)")
+        return 0
+    written = distill_module.stage(cfg, candidates, session_id=session_id)
+    for path in written:
+        print(f"staged → {path}")
+    print(f"\n{len(written)} candidate(s) staged. Review with: memex candidates")
+    return 0
+
+
+def _cmd_candidates(cfg: Config) -> int:
+    """List staged candidates awaiting review."""
+    staged = distill_module.list_candidates(cfg)
+    if not staged:
+        print("no staged candidates")
+        return 0
+    for item in staged:
+        print(f"[{item.scope}] {item.name}  ({item.path})")
+    print("\nPromote one with: memex accept <name>")
+    return 0
+
+
+def _cmd_accept(cfg: Config, name: str) -> int:
+    """Promote a staged candidate into its scope's live memory directory."""
+    destination = distill_module.accept(cfg, name)
+    if destination is None:
+        print(f"could not accept {name!r} (not staged, or a live memory exists)")
+        return 1
+    print(f"accepted → {destination}\nrun `memex index` to make it searchable")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     """Parse arguments and dispatch to the chosen subcommand."""
     args = _build_parser().parse_args(argv)
+    if args.command == "maintain":
+        return _cmd_maintain(config_module.load_all())
+
     cfg = config_module.load(cwd=os.getcwd())
     scopes = _active_scopes(cfg, args.scope)
 
@@ -178,6 +240,12 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_stats(cfg, scopes)
     if args.command == "doctor":
         return _cmd_doctor(cfg)
+    if args.command == "distill":
+        return _cmd_distill(cfg, args.transcript, args.session_id)
+    if args.command == "candidates":
+        return _cmd_candidates(cfg)
+    if args.command == "accept":
+        return _cmd_accept(cfg, args.name)
     return 1
 
 

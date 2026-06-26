@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Memex dream/maintenance launchd agent (macOS).
+
+  Runs the maintenance sweep (index + dream across the global scope and every
+  project) once a day at 03:00. Install:
+
+    cp ~/.claude/memex/scripts/com.memex.dream.plist ~/Library/LaunchAgents/
+    launchctl load ~/Library/LaunchAgents/com.memex.dream.plist
+
+  Remove:
+
+    launchctl unload ~/Library/LaunchAgents/com.memex.dream.plist
+    rm ~/Library/LaunchAgents/com.memex.dream.plist
+
+  Replace HOME_PLACEHOLDER below with your home path (the install step in the
+  README does this automatically).
+-->
+<plist version="1.0">
+  <dict>
+    <key>Label</key>
+    <string>com.memex.dream</string>
+    <key>ProgramArguments</key>
+    <array>
+      <string>/bin/bash</string>
+      <string>HOME_PLACEHOLDER/.claude/memex/scripts/run-maintenance.sh</string>
+    </array>
+    <key>StartCalendarInterval</key>
+    <dict>
+      <key>Hour</key>
+      <integer>3</integer>
+      <key>Minute</key>
+      <integer>0</integer>
+    </dict>
+    <key>StandardOutPath</key>
+    <string>/tmp/memex-maintenance.log</string>
+    <key>StandardErrorPath</key>
+    <string>/tmp/memex-maintenance.log</string>
+    <key>RunAtLoad</key>
+    <false/>
+  </dict>
+</plist>
