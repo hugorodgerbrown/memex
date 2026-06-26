@@ -1,0 +1,4 @@
+# uv-managed virtualenv and Python caches for the memex tool.
+.venv/
+__pycache__/
+*.pyc
