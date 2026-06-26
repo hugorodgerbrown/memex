@@ -146,7 +146,9 @@ class Store:
                     _now(),
                 ),
             )
-            memory_id = int(cur.lastrowid)
+            if cur.lastrowid is None:  # pragma: no cover - sqlite always sets it
+                raise RuntimeError("INSERT did not return a rowid")
+            memory_id = cur.lastrowid
             self._db.execute(
                 "INSERT INTO memory_stats (memory_id, created_at) VALUES (?, ?)",
                 (memory_id, _now()),

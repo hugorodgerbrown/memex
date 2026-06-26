@@ -54,6 +54,8 @@ memex = "memex.cli:main"
 dev = [
     "pytest>=8",
     "ruff>=0.8",
+    "mypy>=1.13",
+    "types-PyYAML>=6.0",
 ]
 
 [build-system]
@@ -77,3 +79,15 @@ select = ["E", "F", "I", "UP", "B", "C4", "S"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
+
+[tool.mypy]
+python_version = "3.14"
+files = ["src/memex"]
+disallow_untyped_defs = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+
+[[tool.mypy.overrides]]
+# These third-party packages ship no type information.
+module = ["sqlite_vec.*", "fastembed.*"]
+ignore_missing_imports = true

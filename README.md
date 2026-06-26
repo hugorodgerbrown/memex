@@ -1,5 +1,7 @@
 # Memex — layered long-term memory for Claude Code
 
+[![CI](https://github.com/hugorodgerbrown/memex/actions/workflows/ci.yml/badge.svg)](https://github.com/hugorodgerbrown/memex/actions/workflows/ci.yml)
+
 A working prototype of the combined memory store designed in chat. Markdown
 memory files stay the system of record; Memex builds a derived index over them
 and adds the three things Claude Code's grep-based memory cannot do on its own:
@@ -29,6 +31,77 @@ can outrank a weakly-relevant project one and vice versa.
 To add a **global** memory, write a Markdown file into `~/.claude/memory/`; to add
 a **project** memory, write it into that project's memory directory (where Claude
 Code already writes them). Scope is determined by which directory the file is in.
+
+## Using Memex day to day
+
+Recall is **passive**; writing is **active or assisted**. You never run a command
+to *get* a memory back — you choose what *goes in*.
+
+### The loop
+
+```
+        WRITE (active/assisted)                 RECALL (passive)
+   you, Claude, or an accepted   ──index──▶   UserPromptSubmit hook injects
+   distillation candidate write              the top matches into context
+   a Markdown file                            on every prompt — automatically
+        │                                            ▲
+        └──── Stop hook re-indexes after ────────────┘
+              each turn; cron `maintain` sweeps the rest
+```
+
+A memory is just a Markdown file with frontmatter. Nothing is recalled until it
+exists as a file and has been indexed; nothing is written without one of the three
+acts below.
+
+### How a memory gets in — three ways
+
+1. **You tell Claude to remember it.** In a session, say "remember that we always
+   run `tox` before a PR". Claude writes the memory file (to the project or global
+   directory) and the `Stop` hook indexes it. This is the common path.
+2. **You write it by hand.** Drop a Markdown file into `~/.claude/memory/` (global)
+   or the project's memory directory. Run `memex index`, or let the next `Stop`
+   hook pick it up. Use this for standards you want to author deliberately.
+3. **You accept a distilled candidate.** With distillation enabled, the
+   `SessionEnd` hook reads the finished conversation and *proposes* memories into
+   staging. You review and confirm:
+
+   ```bash
+   memex candidates          # what the last session proposed
+   memex accept use-ruff     # promote one into its scope's memory dir
+   memex index               # make the accepted memory searchable
+   ```
+
+   Generation is passive; the **accept is the gate** — nothing the model proposes
+   enters the live store on its own.
+
+### Active vs passive, at a glance
+
+| Action | Who | Active or passive |
+|---|---|---|
+| Recall into context | the `UserPromptSubmit` hook | passive — every prompt |
+| Re-index after a turn | the `Stop` hook | passive |
+| Write "remember X" | you ask, Claude writes | active |
+| Author a standard by hand | you | active |
+| Propose memories from a session | the `SessionEnd` hook | passive (proposal only) |
+| Accept a proposal | you (`memex accept`) | active — the gate |
+| Nightly dedup / salience / reports | cron `maintain` | passive |
+
+### Forgetting and editing
+
+The Markdown is the source of truth, so you manage memories as files:
+
+- **Edit**: change the file; the next index run re-embeds it.
+- **Delete**: remove the file; the next index run soft-deletes it from the store.
+- **Demote without deleting**: leave it — decay lowers its recall strength the
+  longer it goes unused, so stale memories sink on their own.
+- **Promote project → global**: move the file from the project directory into
+  `~/.claude/memory/`.
+
+### Choosing the scope
+
+Put cross-project facts (style, standards, tooling preferences) in the global
+directory; put codebase-specific facts in the project directory. When in doubt,
+project — a global memory surfaces in *every* repo's sessions.
 
 ## What it is
 
@@ -202,3 +275,34 @@ ranking) and updates salience scores, but never edits or deletes a memory file.
   A confidence threshold could auto-accept high-signal global facts.
 * **Embedding privacy** — the default backend is local, so memory contents never
   leave the machine. Swapping in an API embedder would change that.
+
+## Context: second brains, the LLM OS, and Obsidian
+
+Memex sits at the intersection of two ideas that predate it.
+
+**The "second brain" and Karpathy's LLM OS.** The second-brain idea (Tiago Forte's
+phrasing) is that you offload durable knowledge to an external, searchable store so
+your own working memory is freed for thinking. Andrej Karpathy reframed the same
+shape for LLMs as the *LLM OS*: the model is the CPU, the **context window is RAM**,
+and external stores — files, vector databases — are the **disk**. An agent is only
+as good as what it can page from disk into RAM at the right moment. Memex is exactly
+that disk-and-pager for Claude Code: memories live on disk as Markdown, the
+`UserPromptSubmit` hook pages the relevant ones into the context window each turn,
+and decay acts as cache eviction — unused pages grow cold and fall out of easy
+reach without being erased. The "second brain" framing explains *why*; the LLM-OS
+framing explains *where it plugs in*.
+
+**Obsidian as memory storage.** A large community uses [Obsidian](https://obsidian.md)
+as a second brain: plain Markdown notes linked by `[[wikilinks]]` into a personal
+knowledge graph, and increasingly wired to LLMs (via plugins and MCP servers) so an
+assistant can read and write the vault. Memex shares that DNA deliberately —
+Markdown as the source of truth, `[[wikilinks]]` as graph edges — but optimises for
+a different reader. Obsidian is **human-first**: you author, browse, and navigate.
+Memex is **agent-first**: the index, hybrid ranking, decay, and prompt-time
+injection are tuned for an LLM retrieving under a token budget, not a person
+clicking through panes.
+
+They compose. Point `MEMEX_GLOBAL_MEMORY_DIR` at an Obsidian vault and Memex will
+index it in place — the vault stays a human-navigable second brain, and the same
+notes become semantically recallable by the agent. The wikilink graph you already
+maintain in Obsidian becomes Memex's structured-recall layer for free.
