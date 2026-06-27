@@ -57,6 +57,7 @@ class Config:
     decay_ceiling: float
     dedup_threshold: float
     distill_model: str
+    maintenance_log: Path
 
     def scope(self, name: str) -> Scope | None:
         """Return the scope with ``name``, or ``None`` if it is not active."""
@@ -172,4 +173,7 @@ def _with_tunables(scopes: list[Scope]) -> Config:
         distill_model=os.environ.get(
             "MEMEX_DISTILL_MODEL", "claude-haiku-4-5-20251001"
         ),
+        maintenance_log=Path(
+            os.environ.get("MEMEX_LOG", "/tmp/memex-maintenance.log")  # noqa: S108
+        ).expanduser(),
     )

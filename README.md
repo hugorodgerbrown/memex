@@ -143,6 +143,7 @@ memex query "text" [-k N] # layered hybrid recall, printed for a human
 memex dream               # consolidation pass → <scope>/.memex/reports/REPORT-<date>.md
 memex stats               # index size + per-memory recall strength, per scope
 memex doctor              # resolved scopes + sqlite-vec / embedder check
+memex health              # did the scheduled maintenance run, and did it succeed?
 memex maintain            # index + dream the global scope and every project (cron entry)
 memex distill <jsonl>     # extract memory candidates from a transcript into staging
 memex candidates          # list staged candidates awaiting review
@@ -250,6 +251,32 @@ The pass is **advisory**: it writes a dated report per scope (candidate
 duplicates, broken `[[wikilinks]]`, memories missing from `MEMORY.md`, salience
 ranking) and updates salience scores, but never edits or deletes a memory file.
 
+### Did it run? — `memex health`
+
+`memex health` answers whether the schedule ran and succeeded, without any
+`launchctl` incantation. It reads the tool's own artefacts: the maintenance log
+(last attempt + a `=== maintenance complete ===` success marker) and each scope's
+newest dream report.
+
+```console
+$ memex health
+maintenance log: /tmp/memex-maintenance.log
+last run:        2026-06-27T03:00:01Z (6h ago) — OK
+scopes (newest dream report):
+  [global] 2026-06-27 (today)
+  [-Users-hugo-Projects-ambassadeurs] 2026-06-27 (today)
+```
+
+It **exits 0** when the last run succeeded and **1** when it failed or never ran,
+so it doubles as a cron/monitoring check. A `FAILED` verdict means the last
+attempt logged a header but no completion marker — read `/tmp/memex-maintenance.log`
+for the traceback. The raw signals, if you want them directly:
+
+```bash
+launchctl list | grep memex          # middle column: 0 = last run OK (macOS)
+tail -n 20 /tmp/memex-maintenance.log # last run's output
+```
+
 ## Configuration
 
 | Variable | Default | Purpose |
@@ -265,6 +292,7 @@ ranking) and updates salience scores, but never edits or deletes a memory file.
 | `MEMEX_DEDUP_THRESHOLD` | `0.92` | Cosine similarity for dup flagging |
 | `MEMEX_DISTILL_ENABLED` | unset (off) | `1` to enable SessionEnd distillation |
 | `MEMEX_DISTILL_MODEL` | `claude-haiku-4-5-20251001` | Model for distillation |
+| `MEMEX_LOG` | `/tmp/memex-maintenance.log` | Maintenance log read by `memex health` |
 
 ## Not yet wired (deliberate extension points)
 

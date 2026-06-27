@@ -21,7 +21,7 @@ from pathlib import Path
 from . import config as config_module
 from . import distill as distill_module
 from . import dream as dream_module
-from . import embeddings, index, retrieve
+from . import embeddings, health, index, retrieve
 from .config import Config, Scope
 from .store import Store
 
@@ -58,6 +58,7 @@ def _build_parser() -> argparse.ArgumentParser:
     sub.add_parser("dream", help="run the consolidation pass and write reports")
     sub.add_parser("stats", help="show index size and recall strength")
     sub.add_parser("doctor", help="show scopes and verify embedder / sqlite-vec")
+    sub.add_parser("health", help="report the last maintenance run's status and age")
 
     p_distill = sub.add_parser(
         "distill", help="extract memory candidates from a transcript into staging"
@@ -180,6 +181,34 @@ def _cmd_doctor(cfg: Config) -> int:
     return 0
 
 
+def _cmd_health(cfg: Config) -> int:
+    """Report the last maintenance run's status/age and per-scope freshness."""
+    now = dt.datetime.now(dt.UTC)
+    print(f"maintenance log: {cfg.maintenance_log}")
+
+    status = health.read_last_run(cfg.maintenance_log)
+    if status is None:
+        print("last run:        never (no maintenance log found)")
+        exit_code = 1
+    else:
+        ts = status.started_at.astimezone(dt.UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+        age = health.humanise_age(now - status.started_at)
+        verdict = "OK" if status.succeeded else "FAILED"
+        print(f"last run:        {ts} ({age}) — {verdict}")
+        exit_code = 0 if status.succeeded else 1
+
+    print("scopes (newest dream report):")
+    today = now.date()
+    for fresh in health.scope_freshness(config_module.load_all()):
+        if fresh.last_report is None:
+            print(f"  [{fresh.scope}] no report yet")
+            continue
+        days = (today - fresh.last_report).days
+        when = "today" if days == 0 else f"{days}d ago"
+        print(f"  [{fresh.scope}] {fresh.last_report.isoformat()} ({when})")
+    return exit_code
+
+
 def _cmd_maintain(cfg: Config) -> int:
     """Index and dream every scope and project; the scheduled entry point."""
     _cmd_index(cfg, cfg.scopes, rebuild=False)
@@ -240,6 +269,8 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_stats(cfg, scopes)
     if args.command == "doctor":
         return _cmd_doctor(cfg)
+    if args.command == "health":
+        return _cmd_health(cfg)
     if args.command == "distill":
         return _cmd_distill(cfg, args.transcript, args.session_id)
     if args.command == "candidates":

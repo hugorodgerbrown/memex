@@ -16,4 +16,7 @@ MEMEX_LOG="${MEMEX_LOG:-/tmp/memex-maintenance.log}"
 {
   echo "=== memex maintenance $(date -u +%Y-%m-%dT%H:%M:%SZ) ==="
   uv run --project "$MEMEX_HOME" memex maintain
+  # A definitive success marker. `set -e` stops the block before this line if the
+  # maintain run fails, so `memex health` can tell success from failure.
+  echo "=== maintenance complete ==="
 } >>"$MEMEX_LOG" 2>&1

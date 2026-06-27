@@ -40,6 +40,7 @@ def make_config(tmp_path: Path) -> Callable[..., Config]:
             decay_ceiling=1.5,
             dedup_threshold=0.92,
             distill_model="test",
+            maintenance_log=tmp_path / "maintenance.log",
         )
 
     return _make
