@@ -22,6 +22,12 @@ from pathlib import Path
 from .config import Config, Scope
 from .store import Store
 
+# A near-duplicate pair whose ``event_date`` values differ by more than this many
+# days is treated as a supersession (the same fact at different points in time)
+# rather than a redundant duplicate. Borrowed from Zep/Graphiti's split of event
+# time from ingestion time (arXiv:2501.13956).
+_SUPERSESSION_GAP_DAYS = 30
+
 
 @dataclass
 class DreamReport:
@@ -31,6 +37,7 @@ class DreamReport:
     generated_at: str
     total: int
     duplicates: list[tuple[str, str, float]] = field(default_factory=list)
+    supersessions: list[tuple[str, str, float]] = field(default_factory=list)
     broken_links: list[tuple[str, str]] = field(default_factory=list)
     unindexed_in_memory_md: list[str] = field(default_factory=list)
     salience: list[tuple[str, float]] = field(default_factory=list)
@@ -39,6 +46,29 @@ class DreamReport:
 def _cosine(a: list[float], b: list[float]) -> float:
     """Cosine similarity of two equal-length vectors (already unit-norm)."""
     return sum(x * y for x, y in zip(a, b, strict=False))
+
+
+def _parse_date(value: str | None) -> dt.date | None:
+    """Parse a ``YYYY-MM-DD`` event date, tolerating ``None`` and bad input."""
+    if not value:
+        return None
+    try:
+        return dt.date.fromisoformat(value[:10])
+    except ValueError:
+        return None
+
+
+def _is_supersession(date_a: str | None, date_b: str | None) -> bool:
+    """True when two event dates are present and more than the gap apart.
+
+    Absent dates (on either side) mean we cannot tell the facts apart in time,
+    so the pair stays a plain duplicate.
+    """
+    parsed_a = _parse_date(date_a)
+    parsed_b = _parse_date(date_b)
+    if parsed_a is None or parsed_b is None:
+        return False
+    return abs((parsed_a - parsed_b).days) > _SUPERSESSION_GAP_DAYS
 
 
 def run(config: Config, scope: Scope, store: Store) -> DreamReport:
@@ -57,9 +87,13 @@ def run(config: Config, scope: Scope, store: Store) -> DreamReport:
         for j in range(i + 1, len(records)):
             sim = _cosine(records[i]["embedding"], records[j]["embedding"])
             if sim >= config.dedup_threshold:
-                report.duplicates.append(
-                    (records[i]["name"], records[j]["name"], round(sim, 3))
-                )
+                pair = (records[i]["name"], records[j]["name"], round(sim, 3))
+                if _is_supersession(
+                    records[i].get("event_date"), records[j].get("event_date")
+                ):
+                    report.supersessions.append(pair)
+                else:
+                    report.duplicates.append(pair)
 
     # Inbound link counts for salience, and broken-link detection.
     inbound: dict[str, int] = {record["name"]: 0 for record in records}
@@ -108,6 +142,14 @@ def write_report(scope: Scope, report: DreamReport, *, today: str) -> Path:
     ]
     if report.duplicates:
         lines += [f"- `{a}` ↔ `{b}` (cosine {sim})" for a, b, sim in report.duplicates]
+    else:
+        lines.append("_None above threshold._")
+
+    lines += ["", "## Possible supersessions (consider archiving the older)", ""]
+    if report.supersessions:
+        lines += [
+            f"- `{a}` ↔ `{b}` (cosine {sim})" for a, b, sim in report.supersessions
+        ]
     else:
         lines.append("_None above threshold._")
 

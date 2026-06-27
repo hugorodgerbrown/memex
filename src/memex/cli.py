@@ -131,6 +131,7 @@ def _cmd_dream(cfg: Config, scopes: list[Scope]) -> int:
         print(
             f"[{scope.name}] {report.total} memories, "
             f"{len(report.duplicates)} dup candidates, "
+            f"{len(report.supersessions)} supersessions, "
             f"{len(report.broken_links)} broken links → {path}"
         )
     return 0

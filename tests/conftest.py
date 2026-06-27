@@ -57,10 +57,12 @@ def write_memory() -> Callable[..., Path]:
         description: str = "",
         body: str = "",
         mtype: str = "reference",
+        event_date: str | None = None,
     ) -> Path:
         path = scope.memory_dir / f"{name}.md"
+        event_line = f"event_date: {event_date}\n" if event_date is not None else ""
         path.write_text(
-            f"---\nname: {name}\ndescription: {description}\n"
+            f"---\nname: {name}\ndescription: {description}\n{event_line}"
             f"metadata:\n  type: {mtype}\n---\n\n{body}\n",
             encoding="utf-8",
         )

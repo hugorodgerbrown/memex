@@ -57,6 +57,7 @@ class Store:
         sqlite_vec.load(self._db)
         self._db.enable_load_extension(False)
         self._create_schema()
+        self._migrate()
 
     def close(self) -> None:
         """Close the underlying database connection."""
@@ -80,7 +81,8 @@ class Store:
                 body         TEXT NOT NULL,
                 links        TEXT NOT NULL,
                 content_hash TEXT NOT NULL,
-                indexed_at   TEXT NOT NULL
+                indexed_at   TEXT NOT NULL,
+                event_date   TEXT
             );
             CREATE TABLE IF NOT EXISTS memory_stats (
                 memory_id     INTEGER PRIMARY KEY
@@ -101,6 +103,16 @@ class Store:
         )
         self._db.commit()
 
+    def _migrate(self) -> None:
+        """Apply additive schema changes to indexes built by older versions."""
+        columns = {
+            row["name"]
+            for row in self._db.execute("PRAGMA table_info(memories)").fetchall()
+        }
+        if "event_date" not in columns:
+            self._db.execute("ALTER TABLE memories ADD COLUMN event_date TEXT")
+            self._db.commit()
+
     # -- indexing -----------------------------------------------------------
 
     def existing_hashes(self) -> dict[str, str]:
@@ -117,7 +129,7 @@ class Store:
         if memory_id is not None:
             self._db.execute(
                 "UPDATE memories SET path=?, mtype=?, description=?, body=?, "
-                "links=?, content_hash=?, indexed_at=? WHERE id=?",
+                "links=?, content_hash=?, indexed_at=?, event_date=? WHERE id=?",
                 (
                     str(memory.path),
                     memory.mtype,
@@ -126,6 +138,7 @@ class Store:
                     json.dumps(memory.links),
                     memory.content_hash,
                     _now(),
+                    memory.event_date,
                     memory_id,
                 ),
             )
@@ -134,7 +147,8 @@ class Store:
         else:
             cur = self._db.execute(
                 "INSERT INTO memories (name, path, mtype, description, body, links, "
-                "content_hash, indexed_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                "content_hash, indexed_at, event_date) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     memory.name,
                     str(memory.path),
@@ -144,6 +158,7 @@ class Store:
                     json.dumps(memory.links),
                     memory.content_hash,
                     _now(),
+                    memory.event_date,
                 ),
             )
             if cur.lastrowid is None:  # pragma: no cover - sqlite always sets it
@@ -257,8 +272,8 @@ class Store:
     def hydrate(self, memory_id: int) -> dict:
         """Return the full stored record for a memory id."""
         row = self._db.execute(
-            "SELECT name, path, mtype, description, body, links FROM memories "
-            "WHERE id=?",
+            "SELECT name, path, mtype, description, body, links, event_date "
+            "FROM memories WHERE id=?",
             (memory_id,),
         ).fetchone()
         return {
@@ -268,6 +283,7 @@ class Store:
             "description": row["description"],
             "body": row["body"],
             "links": json.loads(row["links"]),
+            "event_date": row["event_date"],
         }
 
     # -- maintenance --------------------------------------------------------
@@ -275,7 +291,7 @@ class Store:
     def all_records(self) -> list[dict]:
         """Return every memory with its id, fields and embedding."""
         rows = self._db.execute(
-            "SELECT m.id, m.name, m.mtype, m.description, m.links, "
+            "SELECT m.id, m.name, m.mtype, m.description, m.links, m.event_date, "
             "v.embedding FROM memories m JOIN vec_memories v ON v.memory_id = m.id"
         ).fetchall()
         records: list[dict] = []
@@ -287,6 +303,7 @@ class Store:
                     "mtype": row["mtype"],
                     "description": row["description"],
                     "links": json.loads(row["links"]),
+                    "event_date": row["event_date"],
                     "embedding": np.frombuffer(
                         row["embedding"], dtype=np.float32
                     ).tolist(),
