@@ -351,12 +351,13 @@ tail -n 20 /tmp/memex-maintenance.log # last run's output
 
 ## Self-update routine
 
-A weekly cloud Routine researches the agent-memory ecosystem and opens at most one
-PR when it finds a concrete improvement — a code change, a prior-art update, a fix,
-or an entry in [`docs/IDEAS.md`](docs/IDEAS.md) — gating any code change on the full
-CI suite. If nothing qualifies, it opens no PR. The schedule, repo binding, and the
-exact prompt are in [`docs/self-update-routine.md`](docs/self-update-routine.md);
-PRs land titled `routine: <summary>` for human review.
+A weekly cloud Routine researches the agent-memory ecosystem and opens one report PR
+summarising every worthwhile improvement it found, plus one GitHub Issue per
+improvement with full implementation detail so Claude can build the solution in a
+single follow-up PR. If nothing qualifies, it opens no PR and no issues. The
+schedule, repo binding, and the exact prompt are in
+[`docs/self-update-routine.md`](docs/self-update-routine.md); report PRs land titled
+`routine: weekly ecosystem report <date>` for human review.
 
 ## Configuration
 
