@@ -28,9 +28,7 @@ def test_dream_flags_duplicates_and_broken_links(make_config, write_memory) -> N
     assert report.total == 3
 
 
-def test_dream_distant_event_dates_are_supersessions(
-    make_config, write_memory
-) -> None:
+def test_dream_distant_event_dates_are_supersessions(make_config, write_memory) -> None:
     """Near-duplicates with far-apart event dates land in supersessions."""
     cfg = make_config()
     scope = cfg.scopes[0]

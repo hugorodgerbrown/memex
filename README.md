@@ -37,9 +37,18 @@ parent repository, matching how the harness itself loads memory. A query ranks
 global and project candidates in one pool, so a strongly-relevant global memory
 can outrank a weakly-relevant project one and vice versa.
 
-To add a **global** memory, write a Markdown file into `~/.claude/memory/`; to add
-a **project** memory, write it into that project's memory directory (where Claude
-Code already writes them). Scope is determined by which directory the file is in.
+Scope is determined by which directory the file is in. You can put a file there
+three ways: write it by hand, have Claude write it, or use the `memex add`
+command, which writes the frontmatter and the `MEMORY.md` line for you:
+
+```bash
+# Author a global memory (omit --scope global for a project memory).
+echo "Use tox to run tests and linting." \
+  | memex --scope global add use-tox --description "tox drives CI" --type feedback
+```
+
+`--body` text can be passed inline instead of piped on stdin. To move an existing
+project memory up to global, use [`memex promote`](#promoting-a-project-memory-to-global).
 
 ## Using Memex day to day
 
@@ -68,8 +77,9 @@ acts below.
    run `tox` before a PR". Claude writes the memory file (to the project or global
    directory) and the `Stop` hook indexes it. This is the common path.
 2. **You write it by hand.** Drop a Markdown file into `~/.claude/memory/` (global)
-   or the project's memory directory. Run `memex index`, or let the next `Stop`
-   hook pick it up. Use this for standards you want to author deliberately.
+   or the project's memory directory — or run `memex add` to author one with the
+   frontmatter and `MEMORY.md` line filled in. Run `memex index`, or let the next
+   `Stop` hook pick it up. Use this for standards you want to author deliberately.
 3. **You accept a distilled candidate.** With distillation enabled, the
    `SessionEnd` hook reads the finished conversation and *proposes* memories into
    staging. You review and confirm:
@@ -103,14 +113,45 @@ The Markdown is the source of truth, so you manage memories as files:
 - **Delete**: remove the file; the next index run soft-deletes it from the store.
 - **Demote without deleting**: leave it — decay lowers its recall strength the
   longer it goes unused, so stale memories sink on their own.
-- **Promote project → global**: move the file from the project directory into
-  `~/.claude/memory/`.
+- **Promote project → global**: see below.
 
 ### Choosing the scope
 
 Put cross-project facts (style, standards, tooling preferences) in the global
 directory; put codebase-specific facts in the project directory. When in doubt,
 project — a global memory surfaces in *every* repo's sessions.
+
+### Promoting a project memory to global
+
+A memory often starts life in a project — you told Claude to remember it while
+working in one repo — and only later proves to be a cross-project rule. Promotion
+moves it from the project store into the global store so it surfaces everywhere.
+
+**When to promote.** Promote when the fact is no longer about *this* codebase: a
+tooling preference (`always run tox before a PR`), a writing-style rule, a
+standard you would want recalled in an unrelated repo. Keep it in the project
+scope when it names this repo's files, services, or decisions. The same rule of
+thumb as choosing scope up front — if it would be noise in another repo's
+sessions, it is not global.
+
+Scope is location, so promotion is a file move. The `memex promote` command does
+the move, transplants the memory's `MEMORY.md` line, and re-indexes both scopes.
+Run it from inside the project. With no argument it lists the project's memories
+and lets you pick:
+
+```bash
+$ memex promote
+Project memories:
+  1. use-tox — tox drives CI
+  2. snowdesk-auth-flow — how the auth handshake works
+
+promote which? [number, or q to quit] > 1
+  promoted → ~/.claude/memory/use-tox.md
+```
+
+Pass a slug to skip the picker: `memex promote use-tox`. Promotion refuses to
+overwrite a global memory of the same name. (The reverse — global → project — is
+a manual file move; it is rare enough not to warrant a command.)
 
 ## What it is
 
@@ -158,6 +199,8 @@ memex distill <jsonl>     # extract memory candidates from a transcript into sta
 memex review              # interactively accept/discard staged candidates
 memex candidates          # list staged candidates awaiting review (non-interactive)
 memex accept <name>       # promote a staged candidate into its scope's memory dir
+memex add <slug>          # author a new memory (--scope global for a global one)
+memex promote [<slug>]    # move a project memory into global (interactive picker if no slug)
 ```
 
 ## Wire up the hooks (always-on context) — global
@@ -227,6 +270,15 @@ enabled:
 Cost note: a global `UserPromptSubmit` hook shells out on every prompt in every
 project. The work is small and degrades silently where there is no index, but it
 is not free. Remove the block to disable.
+
+## Teach Claude the write side (optional)
+
+The hooks cover recall. They do not tell Claude *how* to write a memory when you
+say "remember this" — in particular, which scope to use. That instruction has to
+live in Claude's standing context, so memex ships a recommended block you paste
+into `~/.claude/CLAUDE.md`. It makes scope selection explicit and points Claude at
+`memex add` / `memex promote`. See
+[docs/claude-memory-instructions.md](docs/claude-memory-instructions.md).
 
 ## How indexing works across projects
 

@@ -8,6 +8,8 @@ the current directory), unless ``--scope`` narrows them:
 * ``dream`` — run the consolidation pass per scope and write dated reports.
 * ``stats`` — show index size and per-memory recall strength per scope.
 * ``doctor`` — show resolved scopes and verify the embedder / sqlite-vec.
+* ``promote`` — move a project memory into the global scope (interactive picker).
+* ``add`` — author a new memory into a scope (global with ``--scope global``).
 """
 
 from __future__ import annotations
@@ -18,6 +20,7 @@ import os
 import sys
 from pathlib import Path
 
+from . import authoring as authoring_module
 from . import config as config_module
 from . import distill as distill_module
 from . import dream as dream_module
@@ -77,6 +80,32 @@ def _build_parser() -> argparse.ArgumentParser:
 
     p_accept = sub.add_parser("accept", help="promote a staged candidate into memory")
     p_accept.add_argument("name", help="the candidate slug to accept")
+
+    p_promote = sub.add_parser(
+        "promote", help="move a project memory into the global scope"
+    )
+    p_promote.add_argument(
+        "name",
+        nargs="?",
+        default=None,
+        help="project memory slug to promote (omit to pick interactively)",
+    )
+
+    p_add = sub.add_parser("add", help="author a new memory into a scope")
+    p_add.add_argument("name", help="memory slug (kebab-case)")
+    p_add.add_argument("--description", default="", help="one-line summary")
+    p_add.add_argument(
+        "--type",
+        dest="mtype",
+        choices=["user", "feedback", "project", "reference"],
+        default="reference",
+        help="memory type (default: reference)",
+    )
+    p_add.add_argument(
+        "--body",
+        default=None,
+        help="memory body text (default: read from stdin)",
+    )
     return parser
 
 
@@ -275,6 +304,87 @@ def _cmd_accept(cfg: Config, name: str) -> int:
     return 0
 
 
+def _reindex(cfg: Config, scope_names: set[str]) -> None:
+    """Re-sync the indexes of the named scopes after a file move or write."""
+    if not scope_names:
+        return
+    embedder = embeddings.build(cfg)
+    for name in sorted(scope_names):
+        scope = cfg.scope(name)
+        if scope is None:
+            continue
+        store = Store(cfg, scope)
+        index.sync(cfg, scope, store, embedder)
+        store.close()
+
+
+def _cmd_promote(cfg: Config, name: str | None) -> int:
+    """Move a project memory into the global scope, then re-index both."""
+    if cfg.scope("project") is None:
+        print("no project scope for this directory; nothing to promote")
+        return 1
+
+    if name is None:
+        if not sys.stdin.isatty():
+            print(
+                "promote is interactive without a name; run it in a terminal "
+                "(or pass a slug: `memex promote <name>`)"
+            )
+            return 1
+        touched = authoring_module.promote_interactively(cfg, ask=input, emit=print)
+        _reindex(cfg, touched)
+        return 0
+
+    result = authoring_module.promote(cfg, name)
+    if not result.ok:
+        reasons = {
+            "not-found": f"no project memory named {name!r}",
+            "conflict": f"a global memory named {name!r} already exists",
+            "no-project-scope": "no project scope for this directory",
+        }
+        print(reasons.get(result.reason, f"could not promote {name!r}"))
+        return 1
+    print(f"promoted → {result.destination}")
+    if not result.index_moved:
+        print(f"(no MEMORY.md line found for {name}; index untouched)")
+    _reindex(cfg, {"project", "global"})
+    return 0
+
+
+def _cmd_add(
+    cfg: Config,
+    scope: str | None,
+    name: str,
+    description: str,
+    mtype: str,
+    body: str | None,
+) -> int:
+    """Author a new memory into the chosen scope, then re-index it."""
+    if scope is None:
+        print("specify the scope: `memex --scope global add ...` (or project)")
+        return 1
+    text = body if body is not None else sys.stdin.read()
+    result = authoring_module.add(
+        cfg,
+        scope=scope,
+        name=name,
+        description=description,
+        mtype=mtype,
+        body=text,
+    )
+    if not result.ok:
+        reasons = {
+            "no-such-scope": f"scope {scope!r} is not active here",
+            "bad-name": f"{name!r} has no usable slug characters",
+            "exists": f"a {scope} memory named {name!r} already exists",
+        }
+        print(reasons.get(result.reason, f"could not add {name!r}"))
+        return 1
+    print(f"added → {result.path}")
+    _reindex(cfg, {scope})
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     """Parse arguments and dispatch to the chosen subcommand."""
     args = _build_parser().parse_args(argv)
@@ -304,6 +414,12 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_candidates(cfg)
     if args.command == "accept":
         return _cmd_accept(cfg, args.name)
+    if args.command == "promote":
+        return _cmd_promote(cfg, args.name)
+    if args.command == "add":
+        return _cmd_add(
+            cfg, args.scope, args.name, args.description, args.mtype, args.body
+        )
     return 1
 
 
