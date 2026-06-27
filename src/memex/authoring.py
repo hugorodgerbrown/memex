@@ -17,7 +17,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
-from .config import Config
+from .config import Config, Scope
 from .markdown import iter_memory_files, parse
 
 _MEMORY_INDEX = "MEMORY.md"
@@ -25,8 +25,8 @@ _VALID_TYPES = ("user", "feedback", "project", "reference")
 
 
 @dataclass
-class ProjectMemory:
-    """A live project memory eligible for promotion."""
+class MemoryEntry:
+    """One live memory: its name, description, and file path."""
 
     name: str
     description: str
@@ -52,19 +52,21 @@ class AddResult:
     path: Path | None = None
 
 
-def list_project_memories(config: Config) -> list[ProjectMemory]:
-    """Return the project scope's live memories, sorted by name.
+def list_memories(scope: Scope) -> list[MemoryEntry]:
+    """Return ``scope``'s live memories, sorted by file name."""
+    memories: list[MemoryEntry] = []
+    for path in iter_memory_files(scope.memory_dir):
+        memory = parse(path)
+        memories.append(MemoryEntry(memory.name, memory.description, path))
+    return memories
 
-    Empty when no project scope is active (e.g. the cwd is not inside a project).
-    """
+
+def list_project_memories(config: Config) -> list[MemoryEntry]:
+    """Return the project scope's live memories, or empty if none is active."""
     scope = config.scope("project")
     if scope is None:
         return []
-    memories: list[ProjectMemory] = []
-    for path in iter_memory_files(scope.memory_dir):
-        memory = parse(path)
-        memories.append(ProjectMemory(memory.name, memory.description, path))
-    return memories
+    return list_memories(scope)
 
 
 def promote(config: Config, name: str) -> PromoteResult:
@@ -189,7 +191,7 @@ def promote_interactively(
     return touched
 
 
-def _select(memories: list[ProjectMemory], choice: str) -> ProjectMemory | None:
+def _select(memories: list[MemoryEntry], choice: str) -> MemoryEntry | None:
     """Resolve a menu ``choice`` (a 1-based number) to a memory, or ``None``."""
     if not choice.isdigit():
         return None

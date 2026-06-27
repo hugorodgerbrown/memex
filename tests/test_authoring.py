@@ -95,6 +95,24 @@ def test_list_project_memories_empty_without_scope(make_config) -> None:
     assert authoring.list_project_memories(cfg) == []
 
 
+def test_list_memories_reads_a_scope(make_config, write_memory) -> None:
+    cfg = make_config(("global", "project"))
+    write_memory(_global(cfg), "style", description="grounded tone")
+    write_memory(_global(cfg), "tox", description="run tox")
+
+    entries = authoring.list_memories(_global(cfg))
+
+    assert [(e.name, e.description) for e in entries] == [
+        ("style", "grounded tone"),
+        ("tox", "run tox"),
+    ]
+
+
+def test_list_memories_empty_scope(make_config) -> None:
+    cfg = make_config(("global",))
+    assert authoring.list_memories(_global(cfg)) == []
+
+
 def test_promote_interactively_picks_by_number(make_config, write_memory) -> None:
     cfg = make_config(("global", "project"))
     write_memory(_project(cfg), "alpha", description="first")

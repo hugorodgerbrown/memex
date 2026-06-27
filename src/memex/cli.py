@@ -5,6 +5,7 @@ the current directory), unless ``--scope`` narrows them:
 
 * ``index`` — sync each scope's index with its memory files (``--rebuild`` redoes all).
 * ``query`` — layered hybrid recall for an ad-hoc query, printed for a human.
+* ``list`` — list every memory file, grouped by scope (reads files, no index).
 * ``dream`` — run the consolidation pass per scope and write dated reports.
 * ``stats`` — show index size and per-memory recall strength per scope.
 * ``doctor`` — show resolved scopes and verify the embedder / sqlite-vec.
@@ -59,6 +60,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "--no-graph", action="store_true", help="disable graph expansion"
     )
 
+    sub.add_parser("list", help="list every memory, grouped by scope")
     sub.add_parser("dream", help="run the consolidation pass and write reports")
     sub.add_parser("stats", help="show index size and recall strength")
     sub.add_parser("doctor", help="show scopes and verify embedder / sqlite-vec")
@@ -143,6 +145,22 @@ def _cmd_query(
         print(f"score={hit.score:.4f}  decay×{hit.multiplier:.2f}")
         print(hit.description)
         print(hit.path)
+    return 0
+
+
+def _cmd_list(cfg: Config, scopes: list[Scope]) -> int:
+    """List every memory file, grouped and headed by scope."""
+    for scope in scopes:
+        memories = authoring_module.list_memories(scope)
+        noun = "memory" if len(memories) == 1 else "memories"
+        print(f"\n[{scope.name}]  {scope.memory_dir}  ({len(memories)} {noun})")
+        if not memories:
+            print("  (none)")
+            continue
+        width = max(len(memory.name) for memory in memories)
+        for memory in memories:
+            summary = memory.description or "(no description)"
+            print(f"  {memory.name:{width}s}  {summary}")
     return 0
 
 
@@ -398,6 +416,8 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_index(cfg, scopes, rebuild=args.rebuild)
     if args.command == "query":
         return _cmd_query(cfg, scopes, args.text, args.k, args.no_graph)
+    if args.command == "list":
+        return _cmd_list(cfg, scopes)
     if args.command == "dream":
         return _cmd_dream(cfg, scopes)
     if args.command == "stats":
