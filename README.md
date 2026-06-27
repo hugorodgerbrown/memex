@@ -2,9 +2,18 @@
 
 [![CI](https://github.com/hugorodgerbrown/memex/actions/workflows/ci.yml/badge.svg)](https://github.com/hugorodgerbrown/memex/actions/workflows/ci.yml)
 
-A working prototype of the combined memory store designed in chat. Markdown
-memory files stay the system of record; Memex builds a derived index over them
-and adds the three things Claude Code's grep-based memory cannot do on its own:
+A working prototype of the combined memory store designed in chat. 
+
+> I'd like to build a persistent long-term memory store for Claude Code. I've seen
+> lots of descriptions on how to do this using things like Hermes, GBrain, MemSearch,
+> Mem0. Functions include semantic search, structured recall, always-on context,
+> and smart forgetting. Could you research these tools, work out what they do, and
+> propose a hypothetical solution that combines the best features of each. Explain
+> the features, what value they add, and why they are an improvement over Claude Code
+> itself.
+
+Markdown memory files stay the system of record; Memex builds a derived index over 
+them and adds the three things Claude Code's grep-based memory cannot do on its own:
 **meaning-based retrieval**, **structured graph recall**, and **self-maintenance**
 (decay + a nightly consolidation pass), with always-on injection at prompt time.
 
