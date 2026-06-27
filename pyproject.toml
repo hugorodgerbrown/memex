@@ -1,7 +1,8 @@
 # Memex — a layered long-term memory store for Claude Code.
 #
 # A standalone tool, installed once at ~/.claude/memex and shared across every
-# project. Run it with `uv run --project ~/.claude/memex memex ...`.
+# project. Put it on your PATH with `uv tool install --editable ~/.claude/memex`,
+# then run `memex ...` from anywhere.
 [project]
 name = "memex"
 version = "0.1.0"

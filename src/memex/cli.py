@@ -5,7 +5,8 @@ the current directory), unless ``--scope`` narrows them:
 
 * ``index`` — sync each scope's index with its memory files (``--rebuild`` redoes all).
 * ``query`` — layered hybrid recall for an ad-hoc query, printed for a human.
-* ``list`` — list every memory file, grouped by scope (reads files, no index).
+* ``list`` — list every memory file across the global scope and every project,
+  grouped by scope (reads files, no index).
 * ``dream`` — run the consolidation pass per scope and write dated reports.
 * ``stats`` — show index size and per-memory recall strength per scope.
 * ``doctor`` — show resolved scopes and verify the embedder / sqlite-vec.
@@ -60,7 +61,9 @@ def _build_parser() -> argparse.ArgumentParser:
         "--no-graph", action="store_true", help="disable graph expansion"
     )
 
-    sub.add_parser("list", help="list every memory, grouped by scope")
+    sub.add_parser(
+        "list", help="list every memory across all projects, grouped by scope"
+    )
     sub.add_parser("dream", help="run the consolidation pass and write reports")
     sub.add_parser("stats", help="show index size and recall strength")
     sub.add_parser("doctor", help="show scopes and verify embedder / sqlite-vec")
@@ -148,12 +151,34 @@ def _cmd_query(
     return 0
 
 
-def _cmd_list(cfg: Config, scopes: list[Scope]) -> int:
-    """List every memory file, grouped and headed by scope."""
-    for scope in scopes:
+def _current_project_dir() -> Path | None:
+    """Memory directory of the project resolved from the current cwd, if any."""
+    scope = config_module.load(cwd=os.getcwd()).scope("project")
+    return scope.memory_dir if scope else None
+
+
+def _list_scopes(cfg: Config, only: str | None) -> list[Scope]:
+    """Scopes to list: global only, every project, or both (the default)."""
+    if only == "global":
+        return [scope for scope in cfg.scopes if scope.name == "global"]
+    if only == "project":
+        return [scope for scope in cfg.scopes if scope.name != "global"]
+    return cfg.scopes
+
+
+def _cmd_list(cfg: Config, only: str | None) -> int:
+    """List every memory file, grouped and headed by scope.
+
+    Spans the global scope and every project that has memories, so the full
+    store is visible from anywhere; the project matching the current directory
+    is marked with ``*``. ``--scope`` narrows to global or projects only.
+    """
+    current = _current_project_dir()
+    for scope in _list_scopes(cfg, only):
         memories = authoring_module.list_memories(scope)
         noun = "memory" if len(memories) == 1 else "memories"
-        print(f"\n[{scope.name}]  {scope.memory_dir}  ({len(memories)} {noun})")
+        marker = "  *" if scope.memory_dir == current else ""
+        print(f"\n[{scope.name}]  {scope.memory_dir}  ({len(memories)} {noun}){marker}")
         if not memories:
             print("  (none)")
             continue
@@ -417,7 +442,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "query":
         return _cmd_query(cfg, scopes, args.text, args.k, args.no_graph)
     if args.command == "list":
-        return _cmd_list(cfg, scopes)
+        return _cmd_list(config_module.load_all(), args.scope)
     if args.command == "dream":
         return _cmd_dream(cfg, scopes)
     if args.command == "stats":

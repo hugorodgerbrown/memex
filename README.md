@@ -171,13 +171,15 @@ Each scope's index lives at `<memory-dir>/.memex/index.db` and is disposable —
 ## Install (once)
 
 ```bash
-# Installs the local embedding backend (onnxruntime); the model itself (~130 MB)
-# downloads once on first use. Run from anywhere.
-uv sync --project ~/.claude/memex
+# Puts `memex` on your PATH (~/.local/bin/memex) and installs the local embedding
+# backend (onnxruntime); the model itself (~130 MB) downloads once on first use.
+# --editable keeps it pointed at the source, so edits here take effect without a
+# reinstall (a new dependency still needs `--reinstall`). Run from anywhere.
+uv tool install --editable ~/.claude/memex
 
 # Verify scopes resolve and the embedder loads, then build both indexes.
-uv run --project ~/.claude/memex memex doctor
-uv run --project ~/.claude/memex memex index --rebuild
+memex doctor
+memex index --rebuild
 ```
 
 `doctor` prints the resolved scopes for the current directory. Run it from inside
@@ -189,7 +191,7 @@ All commands act on both scopes unless `--scope global|project` narrows them.
 
 ```bash
 memex index [--rebuild]   # sync the indexes with the memory files
-memex list                # list every memory, grouped by scope (reads files, no index)
+memex list                # list every memory across all projects, grouped by scope (* marks the current project)
 memex query "text" [-k N] # layered hybrid recall, printed for a human
 memex dream               # consolidation pass → <scope>/.memex/reports/REPORT-<date>.md
 memex stats               # index size + per-memory recall strength, per scope
