@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from . import embeddings
 from .config import Config, Scope
 from .embeddings import Embedder
 from .markdown import iter_memory_files, parse
@@ -73,3 +74,40 @@ def sync(
         removed=removed,
         unchanged=unchanged,
     )
+
+
+def _has_changes(scope: Scope, store: Store) -> bool:
+    """Whether ``scope``'s files differ from what the index already holds."""
+    existing = store.existing_hashes()
+    current = {
+        memory.name: memory.content_hash
+        for memory in (parse(path) for path in iter_memory_files(scope.memory_dir))
+    }
+    return existing != current
+
+
+def sync_active(config: Config) -> list[IndexResult]:
+    """Incrementally index every active scope that has pending changes.
+
+    The embedding model is loaded only when at least one scope changed, so a
+    no-op call (the common case at session start or end) stays cheap. This is the
+    entry point for the ``SessionStart`` and ``Stop`` hooks.
+    """
+    pairs = [
+        (scope, Store(config, scope))
+        for scope in config.scopes
+        if scope.memory_dir.exists()
+    ]
+    results: list[IndexResult] = []
+    try:
+        pending = [
+            (scope, store) for scope, store in pairs if _has_changes(scope, store)
+        ]
+        if pending:
+            embedder = embeddings.build(config)
+            for scope, store in pending:
+                results.append(sync(config, scope, store, embedder))
+    finally:
+        for _scope, store in pairs:
+            store.close()
+    return results

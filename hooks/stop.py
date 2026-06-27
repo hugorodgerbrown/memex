@@ -19,8 +19,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 from memex import config as config_module  # noqa: E402
-from memex import embeddings, index  # noqa: E402
-from memex.store import Store  # noqa: E402
+from memex import index  # noqa: E402
 
 
 def main() -> int:
@@ -34,14 +33,7 @@ def main() -> int:
         pass
 
     try:
-        cfg = config_module.load(cwd=cwd)
-        embedder = embeddings.build(cfg)
-        for scope in cfg.scopes:
-            if not scope.memory_dir.exists():
-                continue
-            store = Store(cfg, scope)
-            index.sync(cfg, scope, store, embedder)
-            store.close()
+        index.sync_active(config_module.load(cwd=cwd))
     except Exception:
         # A hook failure must not disrupt the session; degrade silently.
         return 0

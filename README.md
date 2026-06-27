@@ -179,12 +179,22 @@ one config serves all projects:
           }
         ]
       }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "uv run --project \"$HOME/.claude/memex\" python \"$HOME/.claude/memex/hooks/session_start.py\""
+          }
+        ]
+      }
     ]
   }
 }
 ```
 
-A third hook, **SessionEnd**, drives distillation (below) and is inert until
+A fourth hook, **SessionEnd**, drives distillation (below) and is inert until
 enabled:
 
 ```json
@@ -196,6 +206,10 @@ enabled:
 * **UserPromptSubmit** runs layered hybrid recall for the prompt and injects the
   top-K memories (across both scopes) into context. It degrades silently — a
   missing index or slow embedder prints nothing and never blocks the prompt.
+* **SessionStart** indexes the active scopes before the first prompt, so project
+  memories are recallable from prompt one with no warm-up. It loads the embedding
+  model only when a scope changed, so for an already-current project it is close
+  to free.
 * **Stop** runs an incremental re-index of every active scope so memories written
   during the turn are searchable next time. Only changed files are re-embedded.
 * **SessionEnd** distils the finished session into staged candidates, but only
@@ -204,6 +218,39 @@ enabled:
 Cost note: a global `UserPromptSubmit` hook shells out on every prompt in every
 project. The work is small and degrades silently where there is no index, but it
 is not free. Remove the block to disable.
+
+## How indexing works across projects
+
+The hooks live in `~/.claude/settings.json`, so they fire in **every** project.
+There is nothing to add per project — a new repo is covered the moment you open a
+session in it.
+
+Indexing is not eager-global; a project's index is built or refreshed by one of:
+
+- **`SessionStart` hook** — indexes the current project (and global) before the
+  first prompt, so recall is fresh from prompt one.
+- **`Stop` hook** — re-indexes the current project after every turn, so a memory
+  written mid-session is searchable on the next prompt.
+- **`memex maintain`** (the scheduled job) — sweeps **all** projects under
+  `~/.claude/projects/*/memory/` that hold at least one memory file, indexing and
+  running the dream cycle on each. This is the only path that touches every
+  project; it runs nightly.
+- **`memex index`** — manual, for the current scopes.
+
+A scope's index is only rebuilt when its files changed, and the embedding model
+loads only when there is work — so `SessionStart`/`Stop` on an already-current
+project are close to free.
+
+**Are all project memories indexed?** Yes, for any project whose `memory/`
+directory holds at least one memory file — via that project's first `SessionStart`
+or the nightly sweep. Empty directories and worktree dirs without a `memory/` are
+skipped (no empty index is created). A worktree session resolves to its parent
+repository's memory, matching how the harness loads memory.
+
+**Are they recalled everywhere?** No — by design. A session queries only **its own
+project's index plus global**, never another project's. Project memories stay
+siloed to that project; only the global scope crosses projects. So "every project
+indexed" is not "every memory recalled everywhere".
 
 ## Transcript distillation (the write side)
 

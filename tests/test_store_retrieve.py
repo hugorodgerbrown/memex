@@ -60,6 +60,24 @@ def test_touch_increments_access_count(make_config, write_memory) -> None:
     assert counts["alpha"] == 1
 
 
+def test_sync_active_indexes_then_noops(make_config, write_memory) -> None:
+    """sync_active indexes pending scopes, and does nothing when current."""
+    cfg = make_config()
+    scope = cfg.scopes[0]
+    write_memory(scope, "alpha", body="hello world")
+
+    first = index.sync_active(cfg)
+    assert [r.scope for r in first] == ["global"]
+    assert first[0].added == ["alpha"]
+
+    # Nothing changed → no scopes processed, no embedder built.
+    assert index.sync_active(cfg) == []
+
+    store = Store(cfg, scope)
+    assert store.count() == 1
+    store.close()
+
+
 def test_prune_removes_deleted_files(make_config, write_memory) -> None:
     """Deleting a memory file soft-deletes it from the index on re-sync."""
     cfg = make_config()
