@@ -276,11 +276,28 @@ ranking) and updates salience scores, but never edits or deletes a memory file.
 * **Embedding privacy** — the default backend is local, so memory contents never
   leave the machine. Swapping in an API embedder would change that.
 
-## Context: second brains, the LLM OS, and Obsidian
+## Context: prior art, second brains, and the LLM OS
 
-Memex sits at the intersection of two ideas that predate it.
+Memex is a synthesis, not a new idea. It takes concrete mechanisms from four
+agent-memory projects and assembles them under one Claude Code-native install.
 
-**The "second brain" and Karpathy's LLM OS.** The second-brain idea (Tiago Forte's
+### Prior art — the memory projects it draws from
+
+| Project | What it is | What Memex took |
+|---|---|---|
+| [Mem0](https://github.com/mem0ai/mem0) | A memory layer between an agent and its LLM; an extract-then-update pipeline (`ADD`/`UPDATE`/`DELETE`/`NOOP`) over a hybrid vector/graph store | **Decay-as-re-ranking** (recall strength falls, the fact is never deleted) and the **consolidation** pass |
+| [GBrain](https://github.com/garrytan/gbrain) | Markdown in a git repo as the system of record, indexed into Postgres + pgvector, with a nightly enrichment cron | **Markdown-as-truth** (delete the file → soft-delete in the index), the **`[[wikilink]]` entity graph** built without an LLM, the **dream cycle**, and **hybrid search** (vector + BM25 + reciprocal-rank fusion) |
+| [MemSearch](https://github.com/zilliztech/memsearch) | A Claude Code plugin: dated Markdown memory, semantic recall injected via hooks | The **hook architecture** — `UserPromptSubmit` injects top-K at prompt time, `Stop` re-indexes — and **silent-degrade** so a hook never blocks a turn |
+| [Hermes](https://github.com/NousResearch/hermes-agent) | An agent with a small always-loaded `MEMORY.md` curated note plus a large searchable conversation archive | The **two-tier split**: a small always-on core (here the global scope) plus a larger archive paged in by relevance (here the project scope) |
+
+The one-line provenance at the top of this README maps each mechanism back to its
+source. Where Memex differs from all four: it spans **two scopes at once** (global +
+project) in a single ranked recall, and it stays **file-first** with no required
+database server — one SQLite file per scope, rebuildable from the Markdown.
+
+### Framing — the "second brain" and Karpathy's LLM OS
+
+The second-brain idea (Tiago Forte's
 phrasing) is that you offload durable knowledge to an external, searchable store so
 your own working memory is freed for thinking. Andrej Karpathy reframed the same
 shape for LLMs as the *LLM OS*: the model is the CPU, the **context window is RAM**,
@@ -292,7 +309,9 @@ and decay acts as cache eviction — unused pages grow cold and fall out of easy
 reach without being erased. The "second brain" framing explains *why*; the LLM-OS
 framing explains *where it plugs in*.
 
-**Obsidian as memory storage.** A large community uses [Obsidian](https://obsidian.md)
+### Obsidian as memory storage
+
+A large community uses [Obsidian](https://obsidian.md)
 as a second brain: plain Markdown notes linked by `[[wikilinks]]` into a personal
 knowledge graph, and increasingly wired to LLMs (via plugins and MCP servers) so an
 assistant can read and write the vault. Memex shares that DNA deliberately —
