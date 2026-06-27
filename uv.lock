@@ -358,14 +358,10 @@ name = "memex"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "fastembed" },
     { name = "numpy" },
     { name = "pyyaml" },
     { name = "sqlite-vec" },
-]
-
-[package.optional-dependencies]
-fastembed = [
-    { name = "fastembed" },
 ]
 
 [package.dev-dependencies]
@@ -378,12 +374,11 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "fastembed", marker = "extra == 'fastembed'", specifier = ">=0.4" },
+    { name = "fastembed", specifier = ">=0.4" },
     { name = "numpy", specifier = ">=1.26" },
     { name = "pyyaml", specifier = ">=6.0" },
     { name = "sqlite-vec", specifier = ">=0.1.6" },
 ]
-provides-extras = ["fastembed"]
 
 [package.metadata.requires-dev]
 dev = [

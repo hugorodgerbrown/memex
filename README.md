@@ -121,9 +121,9 @@ Each scope's index lives at `<memory-dir>/.memex/index.db` and is disposable —
 ## Install (once)
 
 ```bash
-# The local embedding model is an opt-in extra (heavy: onnxruntime + a one-time
-# model download of ~130 MB). Run from anywhere.
-uv sync --project ~/.claude/memex --extra fastembed
+# Installs the local embedding backend (onnxruntime); the model itself (~130 MB)
+# downloads once on first use. Run from anywhere.
+uv sync --project ~/.claude/memex
 
 # Verify scopes resolve and the embedder loads, then build both indexes.
 uv run --project ~/.claude/memex memex doctor

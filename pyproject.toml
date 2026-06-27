@@ -31,18 +31,17 @@ dependencies = [
     "sqlite-vec>=0.1.6",
     "numpy>=1.26",
     "pyyaml>=6.0",
+    # The default embedding backend (local ONNX). A core dependency because
+    # `uv run` only installs declared dependencies, and the hooks/maintenance all
+    # invoke `uv run` — an optional extra would be dropped and recall would fail.
+    # The offline `hash` backend (used by the tests) needs none of this.
+    "fastembed>=0.4",
 ]
 
 [project.urls]
 Homepage = "https://github.com/hugorodgerbrown/memex"
 Repository = "https://github.com/hugorodgerbrown/memex"
 Issues = "https://github.com/hugorodgerbrown/memex/issues"
-
-[project.optional-dependencies]
-# The local embedding backend. Heavy (onnxruntime + a model download), so it is
-# opt-in: `uv sync --extra fastembed`. The offline `hash` backend needs none of
-# this and is what the tests use.
-fastembed = ["fastembed>=0.4"]
 
 [project.scripts]
 memex = "memex.cli:main"

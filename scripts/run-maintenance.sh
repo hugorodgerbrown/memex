@@ -6,6 +6,10 @@
 # by hand. Logs to $MEMEX_LOG (default /tmp/memex-maintenance.log).
 set -euo pipefail
 
+# launchd and cron run with a minimal PATH that omits user install locations, so
+# `uv` (typically ~/.local/bin) is not found. Prepend the usual locations.
+export PATH="$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
+
 MEMEX_HOME="${MEMEX_HOME:-$HOME/.claude/memex}"
 MEMEX_LOG="${MEMEX_LOG:-/tmp/memex-maintenance.log}"
 

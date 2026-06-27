@@ -14,7 +14,7 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@v5
 
-      - name: Sync (dev group; offline hash backend, no fastembed)
+      - name: Sync (base + dev group)
         run: uv sync --group dev
 
       - name: Format check
