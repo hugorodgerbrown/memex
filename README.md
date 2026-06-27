@@ -146,7 +146,8 @@ memex doctor              # resolved scopes + sqlite-vec / embedder check
 memex health              # did the scheduled maintenance run, and did it succeed?
 memex maintain            # index + dream the global scope and every project (cron entry)
 memex distill <jsonl>     # extract memory candidates from a transcript into staging
-memex candidates          # list staged candidates awaiting review
+memex review              # interactively accept/discard staged candidates
+memex candidates          # list staged candidates awaiting review (non-interactive)
 memex accept <name>       # promote a staged candidate into its scope's memory dir
 ```
 
@@ -213,10 +214,25 @@ review-gated — nothing is written into the live store without a human accept:
    asks a small model (`MEMEX_DISTILL_MODEL`, default Haiku) for durable facts,
    and writes them to `<scope>/.memex/candidates/` as *proposed* memories. The
    model assigns each a scope: global for cross-project facts, project otherwise.
-2. **Review**: `memex candidates` lists what was staged.
-3. **Accept**: `memex accept <name>` moves a candidate into its scope's memory
-   directory (and strips the `proposed` marker); `memex index` then makes it
-   searchable. To reject, delete the staged file.
+2. **Review** — `memex review` walks each staged candidate, shows its detail, and
+   prompts to **a**ccept, **d**iscard, **s**kip, or **q**uit. Accepting promotes
+   the memory into its scope's directory (stripping the `proposed` marker) and the
+   command re-indexes the accepted scopes so they are searchable straight away.
+
+   ```console
+   $ memex review
+   2 staged candidate(s) to review.
+
+   === use-ruff-format  [global/feedback] ===
+   run ruff format before commit
+
+   Always run ruff format. CI checks it.
+   [a]ccept  [d]iscard  [s]kip  [q]uit > a
+     accepted → ~/.claude/memory/use-ruff-format.md
+   ```
+
+   For scripting, the non-interactive pair still exists: `memex candidates` lists
+   what was staged and `memex accept <name>` promotes one (then run `memex index`).
 
 Run it by hand on any transcript: `memex distill path/to/session.jsonl`. The
 model call goes through the `claude` CLI (no API key); if the CLI is missing it

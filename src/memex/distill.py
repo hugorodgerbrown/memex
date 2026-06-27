@@ -253,6 +253,16 @@ def list_candidates(config: Config) -> list[StagedFile]:
     return staged
 
 
+def discard(config: Config, name: str) -> bool:
+    """Delete a staged candidate by name. Returns whether one was removed."""
+    for scope in config.scopes:
+        source = _candidates_dir(scope) / f"{name}.md"
+        if source.exists():
+            source.unlink()
+            return True
+    return False
+
+
 def accept(config: Config, name: str) -> Path | None:
     """Promote a staged candidate into its scope's live memory directory.
 

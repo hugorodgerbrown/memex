@@ -22,6 +22,7 @@ from . import config as config_module
 from . import distill as distill_module
 from . import dream as dream_module
 from . import embeddings, health, index, retrieve
+from . import review as review_module
 from .config import Config, Scope
 from .store import Store
 
@@ -72,6 +73,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "maintain", help="index + dream every scope and project (for cron/launchd)"
     )
     sub.add_parser("candidates", help="list staged memory candidates awaiting review")
+    sub.add_parser("review", help="interactively accept/discard staged candidates")
 
     p_accept = sub.add_parser("accept", help="promote a staged candidate into memory")
     p_accept.add_argument("name", help="the candidate slug to accept")
@@ -228,6 +230,28 @@ def _cmd_distill(cfg: Config, transcript: str, session_id: str) -> int:
     return 0
 
 
+def _cmd_review(cfg: Config) -> int:
+    """Interactively review staged candidates, re-indexing any accepted."""
+    if not sys.stdin.isatty():
+        print(
+            "review is interactive; run it in a terminal "
+            "(or use `memex candidates` + `memex accept <name>` non-interactively)"
+        )
+        return 1
+    result = review_module.review(cfg, ask=input, emit=print)
+    if result.accepted_scopes:
+        embedder = embeddings.build(cfg)
+        for name in result.accepted_scopes:
+            scope = cfg.scope(name)
+            if scope is None:
+                continue
+            store = Store(cfg, scope)
+            index.sync(cfg, scope, store, embedder)
+            store.close()
+        print("re-indexed accepted memories")
+    return 0
+
+
 def _cmd_candidates(cfg: Config) -> int:
     """List staged candidates awaiting review."""
     staged = distill_module.list_candidates(cfg)
@@ -273,6 +297,8 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_health(cfg)
     if args.command == "distill":
         return _cmd_distill(cfg, args.transcript, args.session_id)
+    if args.command == "review":
+        return _cmd_review(cfg)
     if args.command == "candidates":
         return _cmd_candidates(cfg)
     if args.command == "accept":
