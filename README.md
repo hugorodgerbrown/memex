@@ -189,6 +189,7 @@ All commands act on both scopes unless `--scope global|project` narrows them.
 
 ```bash
 memex index [--rebuild]   # sync the indexes with the memory files
+memex list                # list every memory, grouped by scope (reads files, no index)
 memex query "text" [-k N] # layered hybrid recall, printed for a human
 memex dream               # consolidation pass → <scope>/.memex/reports/REPORT-<date>.md
 memex stats               # index size + per-memory recall strength, per scope
