@@ -35,6 +35,7 @@ class MemoryFile:
     body: str
     links: list[str] = field(default_factory=list)
     content_hash: str = ""
+    event_date: str | None = None  # optional YYYY-MM-DD string
 
     @property
     def searchable_text(self) -> str:
@@ -67,6 +68,13 @@ def parse(path: Path) -> MemoryFile:
     description = str(front.get("description") or "")
     mtype = str(metadata.get("type") or front.get("type") or "note")
 
+    # Optional event time (when the fact was true), distinct from ingestion time
+    # (when it was recorded). Kept as a plain string — YAML may parse an unquoted
+    # ``YYYY-MM-DD`` into a ``date`` object, so stringify but do not coerce
+    # further. Absent field stays ``None``.
+    raw_event_date = front.get("event_date")
+    event_date = str(raw_event_date) if raw_event_date is not None else None
+
     links = sorted({_normalise_link(t) for t in _WIKILINK.findall(body)})
 
     return MemoryFile(
@@ -77,6 +85,7 @@ def parse(path: Path) -> MemoryFile:
         body=body,
         links=links,
         content_hash=content_hash,
+        event_date=event_date,
     )
 
 
