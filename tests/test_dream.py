@@ -28,6 +28,39 @@ def test_dream_flags_duplicates_and_broken_links(make_config, write_memory) -> N
     assert report.total == 3
 
 
+def test_dream_splits_supersessions_by_event_date(make_config, write_memory) -> None:
+    """Near-duplicates with distant event dates are flagged as supersessions."""
+    cfg = make_config()
+    scope = cfg.scopes[0]
+    write_memory(scope, "old-fact", body=_SHARED, event_date="2025-01-01")
+    write_memory(scope, "new-fact", body=_SHARED, event_date="2026-01-01")
+    store = Store(cfg, scope)
+    index.sync(cfg, scope, store, embeddings.build(cfg), rebuild=True)
+
+    report = dream.run(cfg, scope, store)
+
+    super_pairs = {tuple(sorted((a, b))) for a, b, _sim in report.supersessions}
+    assert ("new-fact", "old-fact") in super_pairs
+    dup_pairs = {tuple(sorted((a, b))) for a, b, _sim in report.duplicates}
+    assert ("new-fact", "old-fact") not in dup_pairs
+
+
+def test_dream_close_event_dates_remain_duplicates(make_config, write_memory) -> None:
+    """Near-duplicates with event dates within the gap stay duplicates."""
+    cfg = make_config()
+    scope = cfg.scopes[0]
+    write_memory(scope, "dup-a", body=_SHARED, event_date="2025-01-01")
+    write_memory(scope, "dup-b", body=_SHARED, event_date="2025-01-15")
+    store = Store(cfg, scope)
+    index.sync(cfg, scope, store, embeddings.build(cfg), rebuild=True)
+
+    report = dream.run(cfg, scope, store)
+
+    dup_pairs = {tuple(sorted((a, b))) for a, b, _sim in report.duplicates}
+    assert ("dup-a", "dup-b") in dup_pairs
+    assert not report.supersessions
+
+
 def test_dream_writes_report(make_config, write_memory, tmp_path) -> None:
     """A dated report file is written for the scope."""
     cfg = make_config()
