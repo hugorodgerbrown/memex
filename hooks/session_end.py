@@ -24,6 +24,11 @@ from memex import distill as distill_module  # noqa: E402
 
 def _enabled() -> bool:
     """Whether distillation is switched on via the environment."""
+    # Re-entry guard: the distiller spawns ``claude -p``, which ends its own
+    # session and fires this hook again. ``call_model`` sets MEMEX_IN_DISTILL on
+    # that subprocess, so bail out rather than distil the nested transcript.
+    if os.environ.get("MEMEX_IN_DISTILL"):
+        return False
     return os.environ.get("MEMEX_DISTILL_ENABLED", "").lower() in ("1", "true", "yes")
 
 
