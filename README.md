@@ -283,6 +283,24 @@ into `~/.claude/CLAUDE.md`. It makes scope selection explicit and points Claude 
 `memex add` / `memex promote`. See
 [docs/claude-memory-instructions.md](docs/claude-memory-instructions.md).
 
+### The `/remember` skill
+
+For an explicit write, memex ships a Claude Code skill invoked as `/remember`. Run
+`/remember <what to remember>` and Claude captures it as a memory; run `/remember`
+with no instruction and it asks what to store. Either way it asks **project or
+global** before writing, then authors the file and its `MEMORY.md` line (via
+`memex add` when on PATH). The skill lives at
+[skills/remember/SKILL.md](skills/remember/SKILL.md). Install it by linking it into
+your personal skills directory:
+
+```bash
+mkdir -p ~/.claude/skills
+ln -s ~/.claude/memex/skills/remember ~/.claude/skills/remember
+```
+
+The skill complements the `CLAUDE.md` block: the block guides Claude when you say
+"remember this" in passing, the skill gives you a named command for it.
+
 ## How indexing works across projects
 
 The hooks live in `~/.claude/settings.json`, so they fire in **every** project.
