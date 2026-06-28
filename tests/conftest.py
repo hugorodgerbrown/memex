@@ -15,6 +15,16 @@ import pytest
 from memex.config import Config, Scope
 
 
+@pytest.fixture(autouse=True)
+def _silence_distill_log(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep distillation logging off by default so tests never touch the real log.
+
+    ``distill._log`` defaults to a path under the real home directory; tests that
+    exercise logging set ``MEMEX_DISTILL_LOG`` themselves to override this.
+    """
+    monkeypatch.setenv("MEMEX_DISTILL_LOG", "off")
+
+
 def _scope(name: str, root: Path) -> Scope:
     """Create an empty memory directory and return its scope."""
     memory_dir = root / name

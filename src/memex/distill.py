@@ -27,20 +27,37 @@ from pathlib import Path
 
 from .config import Config, Scope
 
+# Default distill log, co-located with the candidates it explains. Logging is on
+# by default so an enabled distiller is observable without extra setup; override
+# the path with ``MEMEX_DISTILL_LOG`` or silence it with ``off``/``none``/empty.
+_DEFAULT_LOG = "~/.claude/memory/.memex/distill.log"
+_LOG_DISABLED = {"", "off", "none", "0"}
+
+
+def _log_path() -> Path | None:
+    """Resolve the distill log path, or ``None`` when logging is switched off."""
+    raw = os.environ.get("MEMEX_DISTILL_LOG")
+    if raw is None:
+        raw = _DEFAULT_LOG
+    raw = raw.strip()
+    if raw.lower() in _LOG_DISABLED:
+        return None
+    return Path(raw).expanduser()
+
 
 def _log(message: str) -> None:
-    """Append a timestamped line to the distill debug log, when one is set.
+    """Append a timestamped line to the distill log, unless logging is off.
 
-    Distillation is otherwise silent and degrades silently, so a session that
-    stages nothing gives no way to tell an auth failure from an empty result.
-    Opt in by pointing ``MEMEX_DISTILL_LOG`` at a file. Logging must never disrupt
-    distillation, so any write error is swallowed.
+    Distillation otherwise degrades silently, so a session that stages nothing
+    gives no way to tell an auth failure from an empty result. Logging defaults to
+    ``_DEFAULT_LOG``; set ``MEMEX_DISTILL_LOG`` to redirect it or ``off`` to
+    silence it. Logging must never disrupt distillation, so write errors are
+    swallowed.
     """
-    target = os.environ.get("MEMEX_DISTILL_LOG")
-    if not target:
+    path = _log_path()
+    if path is None:
         return
     try:
-        path = Path(target).expanduser()
         path.parent.mkdir(parents=True, exist_ok=True)
         stamp = time.strftime("%Y-%m-%dT%H:%M:%S")
         with path.open("a", encoding="utf-8") as handle:
