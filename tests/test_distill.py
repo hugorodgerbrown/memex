@@ -97,16 +97,27 @@ def test_extract_returns_empty_when_model_unavailable(
     assert distill.extract(make_config(), path, "test-model") == []
 
 
-def test_log_writes_only_when_enabled(tmp_path, monkeypatch) -> None:
-    """``_log`` is a no-op unless ``MEMEX_DISTILL_LOG`` points somewhere."""
-    target = tmp_path / "distill.log"
-    monkeypatch.delenv("MEMEX_DISTILL_LOG", raising=False)
-    distill._log("should not appear")
-    assert not target.exists()
+def test_log_defaults_override_and_off(tmp_path, monkeypatch) -> None:
+    """``_log`` writes to the default, honours an override, and can be silenced."""
+    default = tmp_path / "default" / "distill.log"
+    monkeypatch.setattr(distill, "_DEFAULT_LOG", str(default))
 
-    monkeypatch.setenv("MEMEX_DISTILL_LOG", str(target))
-    distill._log("hello")
-    assert "hello" in target.read_text(encoding="utf-8")
+    # Unset -> writes to the default path (created on demand).
+    monkeypatch.delenv("MEMEX_DISTILL_LOG", raising=False)
+    distill._log("to-default")
+    assert "to-default" in default.read_text(encoding="utf-8")
+
+    # An explicit path overrides the default.
+    override = tmp_path / "override.log"
+    monkeypatch.setenv("MEMEX_DISTILL_LOG", str(override))
+    distill._log("to-override")
+    assert "to-override" in override.read_text(encoding="utf-8")
+
+    # An off sentinel silences logging without touching either file.
+    monkeypatch.setenv("MEMEX_DISTILL_LOG", "off")
+    distill._log("dropped")
+    assert "dropped" not in override.read_text(encoding="utf-8")
+    assert "dropped" not in default.read_text(encoding="utf-8")
 
 
 def test_call_model_distinguishes_auth_error(tmp_path, monkeypatch) -> None:
