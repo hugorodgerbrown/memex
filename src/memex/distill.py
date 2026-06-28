@@ -17,13 +17,37 @@ is staged and the caller degrades silently.
 from __future__ import annotations
 
 import json
+import os
 import re
 import shutil
 import subprocess
+import time
 from dataclasses import dataclass
 from pathlib import Path
 
 from .config import Config, Scope
+
+
+def _log(message: str) -> None:
+    """Append a timestamped line to the distill debug log, when one is set.
+
+    Distillation is otherwise silent and degrades silently, so a session that
+    stages nothing gives no way to tell an auth failure from an empty result.
+    Opt in by pointing ``MEMEX_DISTILL_LOG`` at a file. Logging must never disrupt
+    distillation, so any write error is swallowed.
+    """
+    target = os.environ.get("MEMEX_DISTILL_LOG")
+    if not target:
+        return
+    try:
+        path = Path(target).expanduser()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        stamp = time.strftime("%Y-%m-%dT%H:%M:%S")
+        with path.open("a", encoding="utf-8") as handle:
+            handle.write(f"{stamp} {message}\n")
+    except OSError:
+        return
+
 
 # Cap on transcript text sent to the model; the tail of a conversation carries
 # the durable conclusions, so we keep the most recent characters.
@@ -155,6 +179,7 @@ def call_model(prompt: str, model: str) -> str | None:
     """Invoke the ``claude`` CLI headlessly and return its text, or ``None``."""
     binary = shutil.which("claude")
     if binary is None:
+        _log("call_model: claude CLI not found on PATH")
         return None
     try:
         # The binary is resolved from PATH and the arguments are fixed plus a
@@ -166,30 +191,57 @@ def call_model(prompt: str, model: str) -> str | None:
             text=True,
             timeout=120,
             check=False,
+            # Mark the spawned session so its SessionEnd hook skips distillation
+            # instead of recursing back into this call.
+            env={**os.environ, "MEMEX_IN_DISTILL": "1"},
         )
     except OSError, subprocess.SubprocessError:
-        return None
-    if result.returncode != 0:
+        _log("call_model: claude CLI subprocess raised (OSError/SubprocessError)")
         return None
     try:
         envelope = json.loads(result.stdout)
     except ValueError:
-        return result.stdout
-    return envelope.get("result") if isinstance(envelope, dict) else result.stdout
+        envelope = None
+    # ``claude -p --output-format json`` returns a JSON envelope even on auth
+    # failure, exiting non-zero with ``is_error`` set. Inspect it before treating
+    # a non-zero exit as a silent miss, so 401s are distinguishable from an empty
+    # extraction in the log.
+    if isinstance(envelope, dict) and envelope.get("is_error"):
+        status = envelope.get("api_error_status")
+        detail = str(envelope.get("result", "")).strip()
+        _log(f"call_model: claude reported error (status={status}): {detail}")
+        return None
+    if result.returncode != 0:
+        _log(
+            f"call_model: claude exited {result.returncode}; "
+            f"stderr={result.stderr.strip()[:200]}"
+        )
+        return None
+    if isinstance(envelope, dict):
+        return envelope.get("result")
+    return result.stdout
 
 
 def extract(config: Config, transcript_path: Path, model: str) -> list[Candidate]:
     """Condense the transcript, call the model, and return parsed candidates."""
     if not transcript_path.exists():
+        _log(f"extract: transcript not found: {transcript_path}")
         return []
     convo = condense_transcript(transcript_path)
     if not convo.strip():
+        _log(f"extract: condensed transcript empty: {transcript_path}")
         return []
     has_project = config.scope("project") is not None
+    _log(f"extract: condensed {len(convo)} chars; calling model {model}")
     text = call_model(build_prompt(convo, has_project=has_project), model)
     if text is None:
+        _log("extract: no model output (see preceding call_model line); staged nothing")
         return []
-    return parse_candidates(text, has_project=has_project)
+    _log(f"extract: raw model output: {text.strip()[:1000]}")
+    candidates = parse_candidates(text, has_project=has_project)
+    names = [c.name for c in candidates]
+    _log(f"extract: parsed {len(candidates)} candidate(s): {names}")
+    return candidates
 
 
 def _candidates_dir(scope: Scope) -> Path:

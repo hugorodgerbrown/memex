@@ -95,3 +95,48 @@ def test_extract_returns_empty_when_model_unavailable(
     _write_transcript(path)
     monkeypatch.setattr(distill, "call_model", lambda prompt, model: None)
     assert distill.extract(make_config(), path, "test-model") == []
+
+
+def test_log_writes_only_when_enabled(tmp_path, monkeypatch) -> None:
+    """``_log`` is a no-op unless ``MEMEX_DISTILL_LOG`` points somewhere."""
+    target = tmp_path / "distill.log"
+    monkeypatch.delenv("MEMEX_DISTILL_LOG", raising=False)
+    distill._log("should not appear")
+    assert not target.exists()
+
+    monkeypatch.setenv("MEMEX_DISTILL_LOG", str(target))
+    distill._log("hello")
+    assert "hello" in target.read_text(encoding="utf-8")
+
+
+def test_call_model_distinguishes_auth_error(tmp_path, monkeypatch) -> None:
+    """An auth-failure envelope is logged as an error, not a silent empty miss."""
+    target = tmp_path / "distill.log"
+    monkeypatch.setenv("MEMEX_DISTILL_LOG", str(target))
+    monkeypatch.setattr(distill.shutil, "which", lambda _name: "/usr/bin/claude")
+
+    class _Result:
+        returncode = 1
+        stdout = json.dumps(
+            {"is_error": True, "api_error_status": 401, "result": "bad creds"}
+        )
+        stderr = ""
+
+    monkeypatch.setattr(distill.subprocess, "run", lambda *a, **k: _Result())
+    assert distill.call_model("prompt", "model") is None
+    logged = target.read_text(encoding="utf-8")
+    assert "status=401" in logged and "bad creds" in logged
+
+
+def test_call_model_returns_result_on_success(tmp_path, monkeypatch) -> None:
+    """A successful envelope yields its ``result`` text."""
+    monkeypatch.delenv("MEMEX_DISTILL_LOG", raising=False)
+    monkeypatch.setattr(distill.shutil, "which", lambda _name: "/usr/bin/claude")
+
+    class _Result:
+        returncode = 0
+        stdout = json.dumps({"is_error": False, "result": "[]"})
+        stderr = ""
+
+    monkeypatch.setattr(distill.subprocess, "run", lambda *a, **k: _Result())
+    assert distill.call_model("prompt", "model") == "[]"
