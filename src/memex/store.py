@@ -28,6 +28,11 @@ from .markdown import MemoryFile
 _TOKEN = re.compile(r"[A-Za-z0-9_]+")
 
 
+def tokenize(text: str) -> list[str]:
+    """Split ``text`` into lower-cased, deduplicated word tokens."""
+    return sorted(set(_TOKEN.findall(text.lower())))
+
+
 def _now() -> str:
     """Return the current UTC time as an ISO-8601 string."""
     return dt.datetime.now(dt.UTC).isoformat()
@@ -212,7 +217,7 @@ class Store:
 
     def fts(self, query: str, n: int) -> list[tuple[int, float]]:
         """Return up to ``n`` keyword (BM25) matches for ``query``."""
-        tokens = sorted(set(_TOKEN.findall(query.lower())))
+        tokens = tokenize(query)
         if not tokens:
             return []
         match = " OR ".join(f'"{token}"' for token in tokens)
@@ -225,6 +230,17 @@ class Store:
         except sqlite3.OperationalError:
             return []
         return [(row["rowid"], row["score"]) for row in rows]
+
+    def document_frequency(self, token: str) -> int:
+        """Return how many indexed memories' text contains ``token``."""
+        try:
+            row = self._db.execute(
+                "SELECT COUNT(*) AS n FROM fts_memories WHERE fts_memories MATCH ?",
+                (f'"{token}"',),
+            ).fetchone()
+        except sqlite3.OperationalError:
+            return 0
+        return int(row["n"])
 
     def decay_multiplier(self, memory_id: int) -> float:
         """Compute the recency/frequency decay multiplier for a memory.

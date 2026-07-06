@@ -87,3 +87,81 @@ def test_prune_removes_deleted_files(make_config, write_memory) -> None:
     result = index.sync(cfg, scope, store, embeddings.build(cfg))
     assert result.removed == ["gamma"]
     assert store.id_for_name("gamma") is None
+
+
+def test_document_frequency_counts_matching_memories(make_config, write_memory) -> None:
+    """document_frequency counts how many indexed memories contain a token."""
+    cfg = make_config()
+    scope = cfg.scopes[0]
+    write_memory(scope, "alpha", body="rrf_k tuning notes")
+    write_memory(scope, "beta", body="general style guidance")
+    write_memory(scope, "gamma", body="general formatting rules")
+    store = Store(cfg, scope)
+    index.sync(cfg, scope, store, embeddings.build(cfg), rebuild=True)
+
+    assert store.document_frequency("rrf_k") == 1
+    assert store.document_frequency("general") == 2
+    assert store.document_frequency("nonexistent") == 0
+
+
+def test_fts_weight_rises_as_the_query_token_gets_rarer(
+    make_config, write_memory
+) -> None:
+    """A rarer query token yields a higher keyword-channel weight than a common one."""
+    cfg = make_config()
+    scope = cfg.scopes[0]
+    write_memory(scope, "alpha", body="rrf_k tuning notes")
+    write_memory(scope, "beta", body="general style guidance")
+    write_memory(scope, "gamma", body="general formatting rules")
+    store = Store(cfg, scope)
+    index.sync(cfg, scope, store, embeddings.build(cfg), rebuild=True)
+
+    assert retrieve._fts_weight(store, "rrf_k") > retrieve._fts_weight(store, "general")
+
+
+class _FakeStore:
+    """A minimal stand-in exposing the subset of Store used by _fused_candidates."""
+
+    def __init__(
+        self,
+        knn_hits: list[tuple[int, float]],
+        fts_hits: list[tuple[int, float]],
+        corpus_size: int,
+        doc_freqs: dict[str, int],
+    ) -> None:
+        self._knn_hits = knn_hits
+        self._fts_hits = fts_hits
+        self._corpus_size = corpus_size
+        self._doc_freqs = doc_freqs
+
+    def knn(self, query_vec: list[float], n: int) -> list[tuple[int, float]]:
+        return self._knn_hits
+
+    def fts(self, query: str, n: int) -> list[tuple[int, float]]:
+        return self._fts_hits
+
+    def decay_multiplier(self, memory_id: int) -> float:
+        return 1.0
+
+    def count(self) -> int:
+        return self._corpus_size
+
+    def document_frequency(self, token: str) -> int:
+        return self._doc_freqs.get(token, 0)
+
+
+def test_adaptive_rrf_raises_score_of_a_keyword_only_hit(make_config) -> None:
+    """A memory found only by the keyword channel scores higher once the rare
+    query token pushes alpha above the disabled fusion's fixed 50/50 split."""
+    cfg_off = make_config(adaptive_rrf=False)
+    cfg_on = make_config(adaptive_rrf=True)
+    store = _FakeStore(
+        knn_hits=[],
+        fts_hits=[(1, 0.0)],
+        corpus_size=10,
+        doc_freqs={"rrf_k": 1},
+    )
+
+    off_score = retrieve._fused_candidates(cfg_off, store, [0.0], "rrf_k")[0][1]
+    on_score = retrieve._fused_candidates(cfg_on, store, [0.0], "rrf_k")[0][1]
+    assert on_score > off_score

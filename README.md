@@ -159,7 +159,7 @@ a manual file move; it is rare enough not to warrant a command.)
 |---|---|---|
 | Vector store | **sqlite-vec** | Embedded, single file, no daemon |
 | Keyword store | **SQLite FTS5** (BM25) | Same file; catches exact names / IDs |
-| Fusion | Reciprocal Rank Fusion | Combines meaning + lexical ranks |
+| Fusion | Reciprocal Rank Fusion (optionally IDF-weighted) | Combines meaning + lexical ranks |
 | Graph | `[[wikilink]]` edges | Free, no LLM; one-hop recall expansion |
 | Embeddings | **fastembed** (local ONNX) | Private, no API key; `hash` backend for tests |
 | Forgetting | Decay re-ranking | Strength falls; the fact is never deleted |
@@ -442,6 +442,8 @@ schedule, repo binding, and the exact prompt are in
 | `MEMEX_EMBED_MODEL` | `BAAI/bge-small-en-v1.5` | fastembed model |
 | `MEMEX_EMBED_DIM` | `384` | Must match the model |
 | `MEMEX_TOP_K` | `3` | Memories injected per prompt |
+| `MEMEX_RRF_K` | `60` | Reciprocal Rank Fusion constant |
+| `MEMEX_ADAPTIVE_RRF` | unset (off) | `1` to weight vector/keyword fusion by per-query IDF instead of a fixed 50/50 split |
 | `MEMEX_DECAY_HALF_LIFE` | `30` | Days; recency half-life |
 | `MEMEX_DECAY_FLOOR` / `_CEILING` | `0.3` / `1.5` | Decay multiplier bounds |
 | `MEMEX_DEDUP_THRESHOLD` | `0.92` | Cosine similarity for dup flagging |

@@ -92,3 +92,7 @@ query token to get document frequency, then computes mean IDF over the corpus si
 to weight the FTS and vector RRF terms. Guard the behaviour behind a new
 `MEMEX_ADAPTIVE_RRF` env-var (default off) so existing installs are unaffected; add
 `adaptive_rrf: bool` to `Config`.
+
+*(Implemented: `Store.document_frequency`/`Store.tokenize` and `retrieve._fts_weight`
+compute the per-query α, gated behind `MEMEX_ADAPTIVE_RRF` — default off, so existing
+installs see no behaviour change.)*

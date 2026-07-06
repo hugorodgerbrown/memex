@@ -36,7 +36,9 @@ def _scope(name: str, root: Path) -> Scope:
 def make_config(tmp_path: Path) -> Callable[..., Config]:
     """Return a factory building a hash-backend :class:`Config` over tmp dirs."""
 
-    def _make(scope_names: Sequence[str] = ("global",)) -> Config:
+    def _make(
+        scope_names: Sequence[str] = ("global",), *, adaptive_rrf: bool = False
+    ) -> Config:
         scopes = [_scope(name, tmp_path) for name in scope_names]
         return Config(
             scopes=scopes,
@@ -45,6 +47,7 @@ def make_config(tmp_path: Path) -> Callable[..., Config]:
             embed_dim=64,
             top_k=3,
             rrf_k=60,
+            adaptive_rrf=adaptive_rrf,
             decay_half_life_days=30.0,
             decay_floor=0.3,
             decay_ceiling=1.5,

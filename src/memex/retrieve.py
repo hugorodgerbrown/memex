@@ -5,7 +5,9 @@ The retrieval pipeline, in order:
 1. Embed the query once.
 2. For each active scope (global, project), take the vector KNN neighbours and
    the BM25 keyword matches and fuse them with Reciprocal Rank Fusion, then
-   multiply each fused score by its decay multiplier (recency/frequency).
+   multiply each fused score by its decay multiplier (recency/frequency). When
+   ``config.adaptive_rrf`` is set, the vector/keyword split is weighted per query
+   by mean inverse document frequency, rather than fixed at 50/50.
 3. Merge the per-scope candidate pools and take the top ``k`` overall, so a
    strongly-relevant global memory can outrank a weakly-relevant project one and
    vice versa. Each hit is tagged with the scope it came from.
@@ -15,14 +17,17 @@ The retrieval pipeline, in order:
 
 from __future__ import annotations
 
+import math
 from collections import defaultdict
 from dataclasses import dataclass
 
 from .config import Config
 from .embeddings import Embedder
-from .store import Store
+from .store import Store, tokenize
 
 _CANDIDATES = 20
+# Mean IDF at which the fusion is exactly 50/50 vector/keyword.
+_IDF_MIDPOINT = 2.0
 
 # A scored retrieval candidate: (store, memory_id, score, multiplier, via-label).
 Candidate = tuple["Store", int, float, float, str]
@@ -44,6 +49,25 @@ class Hit:
     scope: str
 
 
+def _fts_weight(store: Store, query: str) -> float:
+    """Return the keyword-channel share ``alpha`` of the RRF fusion, in (0, 1).
+
+    Rare or technical query tokens (high mean IDF across the corpus) favour
+    exact lexical matching, so ``alpha`` moves toward 1; common or conceptual
+    tokens (low mean IDF) favour vector similarity, so it moves toward 0. A
+    mean IDF of ``_IDF_MIDPOINT`` gives an even 0.5 split.
+    """
+    tokens = tokenize(query)
+    corpus_size = store.count()
+    if not tokens or corpus_size == 0:
+        return 0.5
+    mean_idf = sum(
+        math.log(corpus_size / max(store.document_frequency(token), 1))
+        for token in tokens
+    ) / len(tokens)
+    return 1.0 / (1.0 + math.exp(-(mean_idf - _IDF_MIDPOINT)))
+
+
 def _fused_candidates(
     config: Config, store: Store, query_vec: list[float], query: str
 ) -> list[tuple[int, float, float]]:
@@ -57,12 +81,16 @@ def _fused_candidates(
     for rank, (memory_id, _score) in enumerate(fts_hits, start=1):
         ranks.setdefault(memory_id, {})["fts"] = rank
 
+    # At alpha=0.5 these weights are both 1.0, matching the unweighted fusion.
+    alpha = _fts_weight(store, query) if config.adaptive_rrf else 0.5
+    weights = {"fts": 2.0 * alpha, "vec": 2.0 * (1.0 - alpha)}
+
     candidates: list[tuple[int, float, float]] = []
     for memory_id, positions in ranks.items():
         rrf = 0.0
         for source in ("vec", "fts"):
             if source in positions:
-                rrf += 1.0 / (config.rrf_k + positions[source])
+                rrf += weights[source] / (config.rrf_k + positions[source])
         multiplier = store.decay_multiplier(memory_id)
         candidates.append((memory_id, rrf * multiplier, multiplier))
     return candidates
