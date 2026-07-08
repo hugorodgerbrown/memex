@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import re
+import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -57,8 +58,20 @@ def parse(path: Path) -> MemoryFile:
 
     match = _FRONTMATTER.match(raw)
     if match:
-        front = yaml.safe_load(match.group(1)) or {}
         body = match.group(2).strip()
+        try:
+            front = yaml.safe_load(match.group(1)) or {}
+        except yaml.YAMLError as exc:
+            # One malformed frontmatter block must not crash a whole-directory
+            # scan (list, index, search). Warn, then fall back to the file stem
+            # for the name and no description — the body is still indexed.
+            print(f"memex: skipping bad frontmatter in {path}: {exc}", file=sys.stderr)
+            front = {}
+        if not isinstance(front, dict):
+            # A frontmatter block that parses to a scalar or list is not a
+            # mapping; treat it as absent rather than crashing on ``.get``.
+            print(f"memex: ignoring non-mapping frontmatter in {path}", file=sys.stderr)
+            front = {}
     else:
         front = {}
         body = raw.strip()
