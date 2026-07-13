@@ -5,7 +5,8 @@ the critical path (cron / a scheduled routine) and:
 
 * flags near-duplicate memories that should probably be merged;
 * recomputes salience (access frequency + inbound graph links);
-* reports broken ``[[wikilinks]]`` and memories missing from ``MEMORY.md``.
+* reports broken ``[[wikilinks]]`` and memories missing from ``MEMORY.md``;
+* suggests ``[[wikilinks]]`` a memory's text names but does not yet link.
 
 It is deliberately advisory: it writes a dated report and updates salience
 scores, but it never edits or deletes a memory file. A human (or a gated
@@ -16,6 +17,7 @@ guarantee that every system surveyed learned the hard way.
 from __future__ import annotations
 
 import datetime as dt
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -39,6 +41,7 @@ class DreamReport:
     duplicates: list[tuple[str, str, float]] = field(default_factory=list)
     supersessions: list[tuple[str, str, float]] = field(default_factory=list)
     broken_links: list[tuple[str, str]] = field(default_factory=list)
+    missing_links: list[tuple[str, str]] = field(default_factory=list)
     unindexed_in_memory_md: list[str] = field(default_factory=list)
     salience: list[tuple[str, float]] = field(default_factory=list)
 
@@ -69,6 +72,30 @@ def _is_supersession(date_a: str | None, date_b: str | None) -> bool:
     if parsed_a is None or parsed_b is None:
         return False
     return abs((parsed_a - parsed_b).days) > _SUPERSESSION_GAP_DAYS
+
+
+def _mentioned_but_unlinked(records: list[dict]) -> list[tuple[str, str]]:
+    """Return ``(source, target)`` pairs naming another memory without linking it.
+
+    Graph-native memory systems (e.g. Cognee's Extract-Cognify-Load pipeline)
+    build relationship edges automatically via LLM-driven entity extraction over
+    stored text. Memex's wikilink graph is deliberately LLM-free (GBrain
+    provenance — see the README), so this borrows the idea rather than the
+    machinery: a plain word-boundary scan for another memory's exact name in a
+    memory's own text, when that memory has not already wikilinked it. This is
+    advisory only, mirroring the broken-link check it sits alongside.
+    """
+    findings: list[tuple[str, str]] = []
+    for record in records:
+        linked = set(record["links"])
+        haystack = f"{record['description']}\n{record['body']}"
+        for other in records:
+            name = other["name"]
+            if name == record["name"] or name in linked:
+                continue
+            if re.search(rf"\b{re.escape(name)}\b", haystack, re.IGNORECASE):
+                findings.append((record["name"], name))
+    return findings
 
 
 def run(config: Config, scope: Scope, store: Store) -> DreamReport:
@@ -113,6 +140,7 @@ def run(config: Config, scope: Scope, store: Store) -> DreamReport:
         report.salience.append((record["name"], salience))
     report.salience.sort(key=lambda item: item[1], reverse=True)
 
+    report.missing_links = _mentioned_but_unlinked(records)
     report.unindexed_in_memory_md = _missing_from_index_file(scope, known)
     return report
 
@@ -161,6 +189,15 @@ def write_report(scope: Scope, report: DreamReport, *, today: str) -> Path:
         ]
     else:
         lines.append("_None._")
+
+    lines += ["", "## Possible missing `[[wikilinks]]` (named but not linked)", ""]
+    if report.missing_links:
+        lines += [
+            f"- `{source}` mentions `{target}` — consider `[[{target}]]`"
+            for source, target in report.missing_links
+        ]
+    else:
+        lines.append("_None found._")
 
     lines += ["", "## Missing from MEMORY.md index", ""]
     if report.unindexed_in_memory_md:

@@ -393,8 +393,10 @@ launchctl load ~/Library/LaunchAgents/com.memex.dream.plist
 and surface the reports.
 
 The pass is **advisory**: it writes a dated report per scope (candidate
-duplicates, broken `[[wikilinks]]`, memories missing from `MEMORY.md`, salience
-ranking) and updates salience scores, but never edits or deletes a memory file.
+duplicates, broken `[[wikilinks]]`, possible missing `[[wikilinks]]` — a memory
+naming another by its exact slug without linking it — memories missing from
+`MEMORY.md`, salience ranking) and updates salience scores, but never edits or
+deletes a memory file.
 
 ### Did it run? — `memex health`
 

@@ -28,6 +28,25 @@ def test_dream_flags_duplicates_and_broken_links(make_config, write_memory) -> N
     assert report.total == 3
 
 
+def test_dream_flags_mentioned_but_unlinked_memories(make_config, write_memory) -> None:
+    """A memory naming another by its exact slug, without a wikilink, is flagged."""
+    cfg = make_config()
+    scope = cfg.scopes[0]
+    write_memory(scope, "use-tox", body="Always run tox before a PR.")
+    write_memory(
+        scope,
+        "ci-checklist",
+        body="Remember use-tox and lint before pushing. See [[does-not-exist]].",
+    )
+    store = Store(cfg, scope)
+    index.sync(cfg, scope, store, embeddings.build(cfg), rebuild=True)
+
+    report = dream.run(cfg, scope, store)
+
+    assert ("ci-checklist", "use-tox") in report.missing_links
+    assert ("use-tox", "ci-checklist") not in report.missing_links
+
+
 def test_dream_distant_event_dates_are_supersessions(make_config, write_memory) -> None:
     """Near-duplicates with far-apart event dates land in supersessions."""
     cfg = make_config()

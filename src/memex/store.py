@@ -305,10 +305,11 @@ class Store:
     # -- maintenance --------------------------------------------------------
 
     def all_records(self) -> list[dict]:
-        """Return every memory with its id, fields and embedding."""
+        """Return every memory with its id, fields, body and embedding."""
         rows = self._db.execute(
-            "SELECT m.id, m.name, m.mtype, m.description, m.links, m.event_date, "
-            "v.embedding FROM memories m JOIN vec_memories v ON v.memory_id = m.id"
+            "SELECT m.id, m.name, m.mtype, m.description, m.body, m.links, "
+            "m.event_date, v.embedding FROM memories m "
+            "JOIN vec_memories v ON v.memory_id = m.id"
         ).fetchall()
         records: list[dict] = []
         for row in rows:
@@ -318,6 +319,7 @@ class Store:
                     "name": row["name"],
                     "mtype": row["mtype"],
                     "description": row["description"],
+                    "body": row["body"],
                     "links": json.loads(row["links"]),
                     "event_date": row["event_date"],
                     "embedding": np.frombuffer(
