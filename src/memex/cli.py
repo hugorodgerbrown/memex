@@ -10,6 +10,7 @@ the current directory), unless ``--scope`` narrows them:
 * ``dream`` — run the consolidation pass per scope and write dated reports.
 * ``stats`` — show index size and per-memory recall strength per scope.
 * ``doctor`` — show resolved scopes and verify the embedder / sqlite-vec.
+* ``recall-log`` — show what memex offered the model on recent prompts.
 * ``promote`` — move a project memory into the global scope (interactive picker).
 * ``add`` — author a new memory into a scope (global with ``--scope global``).
 """
@@ -26,7 +27,7 @@ from . import authoring as authoring_module
 from . import config as config_module
 from . import distill as distill_module
 from . import dream as dream_module
-from . import embeddings, health, index, retrieve
+from . import embeddings, health, index, recall_log, retrieve
 from . import review as review_module
 from .config import Config, Scope
 from .store import Store
@@ -68,6 +69,17 @@ def _build_parser() -> argparse.ArgumentParser:
     sub.add_parser("stats", help="show index size and recall strength")
     sub.add_parser("doctor", help="show scopes and verify embedder / sqlite-vec")
     sub.add_parser("health", help="report the last maintenance run's status and age")
+
+    p_recall_log = sub.add_parser(
+        "recall-log", help="show what memex offered on recent prompts"
+    )
+    p_recall_log.add_argument(
+        "-n",
+        "--tail",
+        type=int,
+        default=20,
+        help="number of recent invocations to show (default: 20)",
+    )
 
     p_distill = sub.add_parser(
         "distill", help="extract memory candidates from a transcript into staging"
@@ -284,6 +296,39 @@ def _cmd_health(cfg: Config) -> int:
     return exit_code
 
 
+def _cmd_recall_log(cfg: Config, tail_n: int) -> int:
+    """Show the last ``tail_n`` invocations of the ``UserPromptSubmit`` hook.
+
+    Each record shows what memex actually put in front of Claude that turn — the
+    ground-truth counterpart to the inline ``[memex:<name>]`` citations, useful
+    when a memory shaped an answer without being cited.
+    """
+    if cfg.recall_log is None:
+        print("recall log is off (MEMEX_RECALL_LOG); nothing to show")
+        return 0
+    print(f"recall log: {cfg.recall_log}")
+    records = recall_log.tail(cfg.recall_log, n=tail_n)
+    if not records:
+        print("no records yet (has the UserPromptSubmit hook fired?)")
+        return 0
+    for record in records:
+        print(f"\n{record.get('ts', '?')}  {record.get('cwd', '')}")
+        prompt = record.get("prompt", "")
+        if prompt:
+            print(f"  prompt: {prompt}")
+        hits = record.get("hits") or []
+        if not hits:
+            print("  (no memories recalled)")
+            continue
+        for hit in hits:
+            print(
+                f"  - {hit.get('name', '?')} "
+                f"[{hit.get('scope', '?')}/{hit.get('mtype', '?')}] "
+                f"score={hit.get('score', 0):.4f} via={hit.get('via', '?')}"
+            )
+    return 0
+
+
 def _cmd_maintain(cfg: Config) -> int:
     """Index and dream every scope and project; the scheduled entry point."""
     _cmd_index(cfg, cfg.scopes, rebuild=False)
@@ -451,6 +496,8 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_doctor(cfg)
     if args.command == "health":
         return _cmd_health(cfg)
+    if args.command == "recall-log":
+        return _cmd_recall_log(cfg, args.tail)
     if args.command == "distill":
         return _cmd_distill(cfg, args.transcript, args.session_id)
     if args.command == "review":

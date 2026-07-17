@@ -25,6 +25,16 @@ def _silence_distill_log(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("MEMEX_DISTILL_LOG", "off")
 
 
+@pytest.fixture(autouse=True)
+def _silence_recall_log(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep recall logging off by default so tests never touch the real log.
+
+    ``config`` reads ``MEMEX_RECALL_LOG`` and defaults it to a path under the
+    real home; tests that exercise the log set the env var themselves.
+    """
+    monkeypatch.setenv("MEMEX_RECALL_LOG", "off")
+
+
 def _scope(name: str, root: Path) -> Scope:
     """Create an empty memory directory and return its scope."""
     memory_dir = root / name
@@ -54,6 +64,7 @@ def make_config(tmp_path: Path) -> Callable[..., Config]:
             dedup_threshold=0.92,
             distill_model="test",
             maintenance_log=tmp_path / "maintenance.log",
+            recall_log=None,
         )
 
     return _make

@@ -19,12 +19,18 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 from memex import config as config_module  # noqa: E402
-from memex import embeddings, retrieve  # noqa: E402
+from memex import embeddings, recall_log, retrieve  # noqa: E402
 from memex.store import Store  # noqa: E402
 
 
 def _render(hits: list[retrieve.Hit]) -> str:
-    """Render recalled memories as a compact, scope-tagged context block."""
+    """Render recalled memories as a compact, scope-tagged context block.
+
+    The block ends with a citation instruction so recall is *visible* in the
+    answer: when a memory shapes the response, the reader sees ``[memex:<name>]``
+    and can tell that memex added value on that turn. Citation is on Claude — a
+    silent use will not appear — so it is a lower bound, not an audit trail.
+    """
     lines = [
         "<memex-recall>",
         f"{len(hits)} long-term memories relevant to this prompt (retrieved "
@@ -39,6 +45,11 @@ def _render(hits: list[retrieve.Hit]) -> str:
         if snippet:
             lines.append(" ".join(snippet)[:400])
         lines.append("")
+    lines.append(
+        "When a memory above shapes your answer, cite it inline as "
+        "`[memex:<name>]` (e.g. `[memex:use-tox]`) so the reader can see which "
+        "recalled memory informed the response."
+    )
     lines.append("</memex-recall>")
     return "\n".join(lines)
 
@@ -67,6 +78,9 @@ def main() -> int:
         # A hook failure must never block prompt submission; degrade silently.
         return 0
 
+    # Log every invocation (even when nothing was recalled) so the reader can
+    # distinguish "memex offered nothing" from "the hook never ran".
+    recall_log.write(cfg.recall_log, cwd=payload.get("cwd"), prompt=prompt, hits=hits)
     if hits:
         print(_render(hits))
     return 0

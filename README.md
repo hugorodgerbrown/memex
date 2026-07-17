@@ -197,6 +197,7 @@ memex dream               # consolidation pass → <scope>/.memex/reports/REPORT
 memex stats               # index size + per-memory recall strength, per scope
 memex doctor              # resolved scopes + sqlite-vec / embedder check
 memex health              # did the scheduled maintenance run, and did it succeed?
+memex recall-log [-n N]   # what memex offered on the last N prompts (audit)
 memex maintain            # index + dream the global scope and every project (cron entry)
 memex distill <jsonl>     # extract memory candidates from a transcript into staging
 memex review              # interactively accept/discard staged candidates
@@ -273,6 +274,28 @@ enabled:
 Cost note: a global `UserPromptSubmit` hook shells out on every prompt in every
 project. The work is small and degrades silently where there is no index, but it
 is not free. Remove the block to disable.
+
+## Seeing memex at work
+
+Because recall is passive, it can be hard to tell whether memex is actually
+shaping Claude's answers. Two signals are wired up:
+
+- **Inline citations.** The injected `<memex-recall>` block ends with an
+  instruction asking Claude to cite any memory it leans on as `[memex:<name>]`
+  — so a reply that uses `use-tox` should read *"…run `tox` first
+  `[memex:use-tox]`."* Citations are on Claude, so a silent use will not show —
+  treat them as a lower bound.
+- **A recall audit log.** Every `UserPromptSubmit` invocation appends a JSON
+  record (prompt snippet, cwd, hits with name/scope/score) to
+  `~/.claude/memory/.memex/recall.log`. This is ground-truth for what memex put
+  in front of the model, independent of whether Claude cited. View it with:
+
+  ```bash
+  memex recall-log -n 10   # last 10 invocations, oldest first
+  ```
+
+  Silence the log by setting `MEMEX_RECALL_LOG=off`, or redirect it with any
+  path.
 
 ## Teach Claude the write side (optional)
 
@@ -452,6 +475,7 @@ schedule, repo binding, and the exact prompt are in
 | `MEMEX_DISTILL_ENABLED` | unset (off) | `1` to enable SessionEnd distillation |
 | `MEMEX_DISTILL_MODEL` | `claude-haiku-4-5-20251001` | Model for distillation |
 | `MEMEX_LOG` | `/tmp/memex-maintenance.log` | Maintenance log read by `memex health` |
+| `MEMEX_RECALL_LOG` | `~/.claude/memory/.memex/recall.log` | Per-prompt recall audit log read by `memex recall-log`; set `off` to silence |
 
 ## Not yet wired (deliberate extension points)
 

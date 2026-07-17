@@ -27,6 +27,24 @@ _WORKTREE_MARKER = "/.claude/worktrees/"
 _DEFAULT_GLOBAL_DIR = Path.home() / ".claude" / "memory"
 _PROJECTS_ROOT = Path.home() / ".claude" / "projects"
 
+# Recall log default: co-located with the distill log under the global scope's
+# ``.memex/`` internal directory. On by default so an installed hook is
+# observable without extra setup; set ``MEMEX_RECALL_LOG`` to ``off``/``none``/
+# ``0``/empty to silence, or to a path to redirect.
+_DEFAULT_RECALL_LOG = "~/.claude/memory/.memex/recall.log"
+_RECALL_LOG_DISABLED = {"", "off", "none", "0"}
+
+
+def _resolve_recall_log() -> Path | None:
+    """Return the recall log path, or ``None`` when it has been switched off."""
+    raw = os.environ.get("MEMEX_RECALL_LOG")
+    if raw is None:
+        raw = _DEFAULT_RECALL_LOG
+    raw = raw.strip()
+    if raw.lower() in _RECALL_LOG_DISABLED:
+        return None
+    return Path(raw).expanduser()
+
 
 @dataclass(frozen=True)
 class Scope:
@@ -59,6 +77,7 @@ class Config:
     dedup_threshold: float
     distill_model: str
     maintenance_log: Path
+    recall_log: Path | None
 
     def scope(self, name: str) -> Scope | None:
         """Return the scope with ``name``, or ``None`` if it is not active."""
@@ -178,4 +197,5 @@ def _with_tunables(scopes: list[Scope]) -> Config:
         maintenance_log=Path(
             os.environ.get("MEMEX_LOG", "/tmp/memex-maintenance.log")  # noqa: S108
         ).expanduser(),
+        recall_log=_resolve_recall_log(),
     )
