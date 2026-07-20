@@ -489,8 +489,11 @@ schedule, repo binding, and the exact prompt are in
 
 ## Context: prior art, second brains, and the LLM OS
 
-Memex is a synthesis, not a new idea. It takes concrete mechanisms from four
+Memex is a synthesis, not a new idea. It takes concrete mechanisms from six
 agent-memory projects and assembles them under one Claude Code-native install.
+The first four shaped the original design; Zep/Graphiti and Cognee were folded in
+later, via the self-update routine, as the dream cycle grew bitemporal and
+graph-suggestion features.
 
 ### Prior art — the memory projects it draws from
 
@@ -500,11 +503,14 @@ agent-memory projects and assembles them under one Claude Code-native install.
 | [GBrain](https://github.com/garrytan/gbrain) | Markdown in a git repo as the system of record, indexed into Postgres + pgvector, with a nightly enrichment cron | **Markdown-as-truth** (delete the file → soft-delete in the index), the **`[[wikilink]]` entity graph** built without an LLM, the **dream cycle**, and **hybrid search** (vector + BM25 + reciprocal-rank fusion) |
 | [MemSearch](https://github.com/zilliztech/memsearch) | A Claude Code plugin: dated Markdown memory, semantic recall injected via hooks | The **hook architecture** — `UserPromptSubmit` injects top-K at prompt time, `Stop` re-indexes — and **silent-degrade** so a hook never blocks a turn |
 | [Hermes](https://github.com/NousResearch/hermes-agent) | An agent with a small always-loaded `MEMORY.md` curated note plus a large searchable conversation archive | The **two-tier split**: a small always-on core (here the global scope) plus a larger archive paged in by relevance (here the project scope) |
+| [Zep / Graphiti](https://github.com/getzep/graphiti) | A temporal knowledge graph for agent memory; every edge carries both *event time* (when a fact was true) and *ingestion time* (when it was recorded) | **Bitemporal `event_date`** — an optional frontmatter field that lets the dream cycle tell a genuine near-duplicate from a fact that changed over time, splitting its report into duplicates and possible supersessions |
+| [Cognee](https://github.com/topoteretes/cognee) | An Extract-Cognify-Load pipeline that builds a knowledge graph from arbitrary documents via LLM-driven entity extraction | The **idea, not the machinery**, behind mentioned-but-unlinked detection — the wikilink graph stays LLM-free, but the dream cycle scans each memory's text for another memory's exact slug and flags it as a candidate `[[wikilink]]` |
 
-The one-line provenance at the top of this README maps each mechanism back to its
-source. Where Memex differs from all four: it spans **two scopes at once** (global +
-project) in a single ranked recall, and it stays **file-first** with no required
-database server — one SQLite file per scope, rebuildable from the Markdown.
+The one-line provenance at the top of this README maps the founding four
+mechanisms back to their source. Where Memex differs from all six: it spans **two
+scopes at once** (global + project) in a single ranked recall, and it stays
+**file-first** with no required database server — one SQLite file per scope,
+rebuildable from the Markdown.
 
 ### Framing — the "second brain" and Karpathy's LLM OS
 
