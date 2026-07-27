@@ -96,3 +96,41 @@ to weight the FTS and vector RRF terms. Guard the behaviour behind a new
 *(Implemented: `Store.document_frequency`/`Store.tokenize` and `retrieve._fts_weight`
 compute the per-query α, gated behind `MEMEX_ADAPTIVE_RRF` — default off, so existing
 installs see no behaviour change.)*
+
+---
+
+## Letta / MemGPT — pinned core-memory blocks that bypass ranked recall
+
+**Source:** MemGPT — *MemGPT: Towards LLMs as Operating Systems*, Packer et al.,
+arXiv:2310.08560 (October 2023); Letta — *Memory Blocks: The Key to Agentic Context
+Management*, <https://www.letta.com/blog/memory-blocks/>.
+
+Letta (the production framework built on the MemGPT paper) splits agent memory into
+tiers, but the load-bearing primitive is the **memory block**: a small, labelled string
+(conventionally `persona` and `human`) that lives permanently in the context window and
+is edited *in place* by the agent itself, via explicit tool calls
+(`core_memory_append`/`core_memory_replace`), rather than being retrieved by a ranked
+search. Everything else — conversation history, archival facts — is paged in by
+relevance, the same way Hermes' two-tier split works.
+
+**Why this fits Memex:** Memex already took the Hermes two-tier idea (global scope as
+the small always-on core, project scope as the larger searched archive — see the README
+provenance line), but the global scope is not literally always-on: it competes in the
+same top-`k` hybrid ranking as every other memory, so a handful of highly-relevant
+project hits can push every global memory out of the injected set on a given prompt.
+There is also no notion of "this memory is small and load-bearing enough that Claude
+should edit it in place" — every write, whether a brand-new fact or a correction to an
+existing one, is a new or replaced Markdown file with no distinction from the rest of
+the store. A `pinned` memory type would close both gaps at once: guaranteed injection,
+independent of ranking, for the handful of facts (e.g. "always run tox before a PR")
+that should never be one bad query away from being dropped.
+
+**Concrete first step:** Add an optional `pinned: true` frontmatter flag (parsed in
+`markdown.py`, alongside the existing `event_date` field) that marks a memory as
+core-tier. In `retrieve.retrieve()`, after fusing the ranked pool, unconditionally
+include every scope's pinned memories ahead of the ranked hits (tagged `via="pinned"`
+so they are visible as bypassing decay/rank), capped by a new `MEMEX_PINNED_MAX`
+tunable (small default, e.g. 5) so an install cannot accidentally pin its way to an
+unbounded prompt. Document the field in the README's memory-authoring section and
+`memex add`'s `--pinned` flag would be the natural CLI affordance, though the frontmatter
+key alone is enough for a first cut.
