@@ -165,3 +165,50 @@ def test_adaptive_rrf_raises_score_of_a_keyword_only_hit(make_config) -> None:
     off_score = retrieve._fused_candidates(cfg_off, store, [0.0], "rrf_k")[0][1]
     on_score = retrieve._fused_candidates(cfg_on, store, [0.0], "rrf_k")[0][1]
     assert on_score > off_score
+
+
+# A long shared body so two memories differing only by name embed near-identically
+# under the hash backend, exceeding the dedup threshold (mirrors test_dream.py).
+_SHARED = " ".join(["consolidation", "memory", "vector", "index", "recall"] * 8)
+
+
+def test_resolve_supersessions_drops_the_older_near_duplicate(
+    make_config, write_memory
+) -> None:
+    """With resolution on, a stale near-duplicate loses its recall slot to the
+    memory that superseded it; with it off (the default), both surface."""
+    cfg_off = make_config(resolve_supersessions=False)
+    cfg_on = make_config(resolve_supersessions=True)
+    scope = cfg_off.scopes[0]
+    write_memory(scope, "old-fact", body=_SHARED, event_date="2025-01-01")
+    write_memory(scope, "new-fact", body=_SHARED, event_date="2026-01-01")
+    store = Store(cfg_off, scope)
+    index.sync(cfg_off, scope, store, embeddings.build(cfg_off), rebuild=True)
+
+    hits_off = retrieve.retrieve(
+        cfg_off, [store], embeddings.build(cfg_off), _SHARED, k=2, expand_graph=False
+    )
+    hits_on = retrieve.retrieve(
+        cfg_on, [store], embeddings.build(cfg_on), _SHARED, k=2, expand_graph=False
+    )
+
+    assert {h.name for h in hits_off} == {"old-fact", "new-fact"}
+    assert {h.name for h in hits_on} == {"new-fact"}
+
+
+def test_resolve_supersessions_ignores_pairs_without_event_dates(
+    make_config, write_memory
+) -> None:
+    """Near-duplicates with no ``event_date`` are never suppressed, even when on."""
+    cfg = make_config(resolve_supersessions=True)
+    scope = cfg.scopes[0]
+    write_memory(scope, "dup-one", body=_SHARED)
+    write_memory(scope, "dup-two", body=_SHARED)
+    store = Store(cfg, scope)
+    index.sync(cfg, scope, store, embeddings.build(cfg), rebuild=True)
+
+    hits = retrieve.retrieve(
+        cfg, [store], embeddings.build(cfg), _SHARED, k=2, expand_graph=False
+    )
+
+    assert {h.name for h in hits} == {"dup-one", "dup-two"}

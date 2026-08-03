@@ -46,8 +46,12 @@ frontmatter in `markdown.py`; surface it in `DreamReport`; update `write_report`
 "Possible supersessions" based on whether event dates differ.
 
 *(Note: `event_date` parsing and supersession detection in the dream cycle are now
-implemented. The remaining gap is using bitemporal logic in query-time resolution — e.g.
-surfacing the most recently true version of a fact without requiring explicit merging.)*
+implemented. Query-time resolution is also implemented: `retrieve._suppress_superseded`,
+gated behind `MEMEX_RESOLVE_SUPERSESSIONS` (default off), drops the older side of a
+near-duplicate pair from a scope's candidate pool before it competes for a recall slot —
+see "Don't Ask the LLM to Track Freshness: A Deterministic Recipe for Memory Conflict
+Resolution", arXiv:2606.01435 (June 2026), which validates keeping freshness resolution
+in deterministic code rather than delegating it to an LLM.)*
 
 ---
 

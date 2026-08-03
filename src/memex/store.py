@@ -285,6 +285,13 @@ class Store:
         ).fetchone()
         return int(row["id"]) if row else None
 
+    def embedding(self, memory_id: int) -> list[float]:
+        """Return the stored embedding vector for a memory id."""
+        row = self._db.execute(
+            "SELECT embedding FROM vec_memories WHERE memory_id=?", (memory_id,)
+        ).fetchone()
+        return np.frombuffer(row["embedding"], dtype=np.float32).tolist()
+
     def hydrate(self, memory_id: int) -> dict:
         """Return the full stored record for a memory id."""
         row = self._db.execute(
