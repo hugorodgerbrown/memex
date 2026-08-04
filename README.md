@@ -469,6 +469,7 @@ schedule, repo binding, and the exact prompt are in
 | `MEMEX_TOP_K` | `3` | Memories injected per prompt |
 | `MEMEX_RRF_K` | `60` | Reciprocal Rank Fusion constant |
 | `MEMEX_ADAPTIVE_RRF` | unset (off) | `1` to weight vector/keyword fusion by per-query IDF instead of a fixed 50/50 split |
+| `MEMEX_RESOLVE_SUPERSESSIONS` | unset (off) | `1` to drop a near-duplicate candidate at query time when another candidate's `event_date` supersedes it (same signal the dream cycle reports offline) |
 | `MEMEX_DECAY_HALF_LIFE` | `30` | Days; recency half-life |
 | `MEMEX_DECAY_FLOOR` / `_CEILING` | `0.3` / `1.5` | Decay multiplier bounds |
 | `MEMEX_DEDUP_THRESHOLD` | `0.92` | Cosine similarity for dup flagging |
