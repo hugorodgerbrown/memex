@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import hashlib
 import math
+from pathlib import Path
 from typing import Protocol
 
 from .config import Config
@@ -77,12 +78,17 @@ class HashEmbedder:
 class FastEmbedEmbedder:
     """Local ONNX embedder backed by the ``fastembed`` package."""
 
-    def __init__(self, model_name: str, dim: int) -> None:
-        """Load the ``fastembed`` model named ``model_name``."""
+    def __init__(self, model_name: str, dim: int, cache_dir: Path) -> None:
+        """Load ``model_name``, caching the ONNX model under ``cache_dir``.
+
+        ``cache_dir`` is always passed explicitly: fastembed's own default puts
+        the model under ``$TMPDIR``, where the OS is free to delete it between
+        runs. See :data:`memex.config._DEFAULT_EMBED_CACHE_DIR`.
+        """
         from fastembed import TextEmbedding  # imported lazily; heavy dependency
 
         self.dim = dim
-        self._model = TextEmbedding(model_name=model_name)
+        self._model = TextEmbedding(model_name=model_name, cache_dir=str(cache_dir))
 
     def embed(self, texts: list[str]) -> list[list[float]]:
         """Embed a batch of texts with the local model."""
@@ -100,5 +106,9 @@ def build(config: Config) -> Embedder:
     if config.embed_backend == "hash":
         return HashEmbedder(dim=config.embed_dim)
     if config.embed_backend == "fastembed":
-        return FastEmbedEmbedder(model_name=config.embed_model, dim=config.embed_dim)
+        return FastEmbedEmbedder(
+            model_name=config.embed_model,
+            dim=config.embed_dim,
+            cache_dir=config.embed_cache_dir,
+        )
     raise ValueError(f"unknown embed backend: {config.embed_backend!r}")

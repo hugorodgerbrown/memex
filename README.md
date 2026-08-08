@@ -466,6 +466,7 @@ schedule, repo binding, and the exact prompt are in
 | `MEMEX_EMBED_BACKEND` | `fastembed` | `fastembed` or `hash` (offline test) |
 | `MEMEX_EMBED_MODEL` | `BAAI/bge-small-en-v1.5` | fastembed model |
 | `MEMEX_EMBED_DIM` | `384` | Must match the model |
+| `MEMEX_EMBED_CACHE_DIR` | `~/.cache/fastembed` | Where the ONNX model is cached. Falls back to `FASTEMBED_CACHE_PATH` if set. Deliberately not under `$TMPDIR` — the OS reaps that, and a reap mid-download leaves a truncated model that fails every later load |
 | `MEMEX_TOP_K` | `3` | Memories injected per prompt |
 | `MEMEX_RRF_K` | `60` | Reciprocal Rank Fusion constant |
 | `MEMEX_ADAPTIVE_RRF` | unset (off) | `1` to weight vector/keyword fusion by per-query IDF instead of a fixed 50/50 split |

@@ -27,12 +27,36 @@ _WORKTREE_MARKER = "/.claude/worktrees/"
 _DEFAULT_GLOBAL_DIR = Path.home() / ".claude" / "memory"
 _PROJECTS_ROOT = Path.home() / ".claude" / "projects"
 
+# Where fastembed keeps its ONNX model (~66MB). Left to itself fastembed caches
+# under ``$TMPDIR``, which macOS reaps periodically — the model then silently
+# re-downloads from HuggingFace, and a reap landing mid-download leaves a 0-byte
+# blob behind a live symlink, which fails every subsequent load with a bare
+# ``NoSuchFile``. Default somewhere durable so the download happens once.
+_DEFAULT_EMBED_CACHE_DIR = Path.home() / ".cache" / "fastembed"
+
 # Recall log default: co-located with the distill log under the global scope's
 # ``.memex/`` internal directory. On by default so an installed hook is
 # observable without extra setup; set ``MEMEX_RECALL_LOG`` to ``off``/``none``/
 # ``0``/empty to silence, or to a path to redirect.
 _DEFAULT_RECALL_LOG = "~/.claude/memory/.memex/recall.log"
 _RECALL_LOG_DISABLED = {"", "off", "none", "0"}
+
+
+def _resolve_embed_cache_dir() -> Path:
+    """Return the directory fastembed should cache its model in.
+
+    ``MEMEX_EMBED_CACHE_DIR`` wins, then fastembed's own ``FASTEMBED_CACHE_PATH``,
+    then :data:`_DEFAULT_EMBED_CACHE_DIR`. The middle rung matters: passing
+    ``cache_dir`` to ``TextEmbedding`` makes fastembed skip its own reading of
+    ``FASTEMBED_CACHE_PATH`` entirely, so honouring it here is what stops an
+    already-set value from silently becoming a no-op.
+    """
+    raw = os.environ.get("MEMEX_EMBED_CACHE_DIR") or os.environ.get(
+        "FASTEMBED_CACHE_PATH"
+    )
+    if raw and raw.strip():
+        return Path(raw.strip()).expanduser()
+    return _DEFAULT_EMBED_CACHE_DIR
 
 
 def _resolve_recall_log() -> Path | None:
@@ -68,6 +92,7 @@ class Config:
     embed_backend: str
     embed_model: str
     embed_dim: int
+    embed_cache_dir: Path
     top_k: int
     rrf_k: int
     adaptive_rrf: bool
@@ -185,6 +210,7 @@ def _with_tunables(scopes: list[Scope]) -> Config:
         embed_backend=os.environ.get("MEMEX_EMBED_BACKEND", "fastembed"),
         embed_model=os.environ.get("MEMEX_EMBED_MODEL", "BAAI/bge-small-en-v1.5"),
         embed_dim=int(os.environ.get("MEMEX_EMBED_DIM", "384")),
+        embed_cache_dir=_resolve_embed_cache_dir(),
         top_k=int(os.environ.get("MEMEX_TOP_K", "3")),
         rrf_k=int(os.environ.get("MEMEX_RRF_K", "60")),
         adaptive_rrf=os.environ.get("MEMEX_ADAPTIVE_RRF", "0") == "1",
