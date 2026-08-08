@@ -9,7 +9,8 @@ the current directory), unless ``--scope`` narrows them:
   grouped by scope (reads files, no index).
 * ``dream`` — run the consolidation pass per scope and write dated reports.
 * ``stats`` — show index size and per-memory recall strength per scope.
-* ``doctor`` — show resolved scopes and verify the embedder / sqlite-vec.
+* ``doctor`` — show resolved scopes, verify the embedder / sqlite-vec, and check
+  that the ``/remember`` skill is linked into ``~/.claude/skills``.
 * ``recall-log`` — show what memex offered the model on recent prompts.
 * ``promote`` — move a project memory into the global scope (interactive picker).
 * ``add`` — author a new memory into a scope (global with ``--scope global``).
@@ -29,6 +30,7 @@ from . import distill as distill_module
 from . import dream as dream_module
 from . import embeddings, health, index, recall_log, retrieve
 from . import review as review_module
+from . import skills as skills_module
 from .config import Config, Scope
 from .store import Store
 
@@ -67,7 +69,9 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     sub.add_parser("dream", help="run the consolidation pass and write reports")
     sub.add_parser("stats", help="show index size and recall strength")
-    sub.add_parser("doctor", help="show scopes and verify embedder / sqlite-vec")
+    sub.add_parser(
+        "doctor", help="show scopes; verify embedder / sqlite-vec / skill link"
+    )
     sub.add_parser("health", help="report the last maintenance run's status and age")
 
     p_recall_log = sub.add_parser(
@@ -265,7 +269,20 @@ def _cmd_doctor(cfg: Config) -> int:
         # Doctor exists to report any failure plainly, so it catches broadly.
         print(f"embedder:   FAILED — {exc}")
         return 1
-    return 0
+    return _report_skill(skills_module.check())
+
+
+def _report_skill(status: skills_module.SkillStatus) -> int:
+    """Print the ``/remember`` skill's deployment state and any fix for it."""
+    label = "ok" if status.ok else "NOT INSTALLED"
+    print(f"/remember:  {label} ({status.state.value}) → {status.link}")
+    if status.state is skills_module.SkillLink.COPY:
+        print("  a copy, not a link: edits in the repo will not reach it")
+    if status.remedy is not None:
+        print(f"  fix: {status.remedy}")
+    # A missing skill leaves recall and the hooks working, so it is reported but
+    # does not fail doctor. A loop does break recursive walks — that one fails.
+    return 1 if status.state is skills_module.SkillLink.LOOPED else 0
 
 
 def _cmd_health(cfg: Config) -> int:

@@ -195,7 +195,7 @@ memex list                # list every memory across all projects, grouped by sc
 memex query "text" [-k N] # layered hybrid recall, printed for a human
 memex dream               # consolidation pass → <scope>/.memex/reports/REPORT-<date>.md
 memex stats               # index size + per-memory recall strength, per scope
-memex doctor              # resolved scopes + sqlite-vec / embedder check
+memex doctor              # resolved scopes + sqlite-vec / embedder / skill-link check
 memex health              # did the scheduled maintenance run, and did it succeed?
 memex recall-log [-n N]   # what memex offered on the last N prompts (audit)
 memex maintain            # index + dream the global scope and every project (cron entry)
@@ -313,13 +313,25 @@ For an explicit write, memex ships a Claude Code skill invoked as `/remember`. R
 with no instruction and it asks what to store. Either way it asks **project or
 global** before writing, then authors the file and its `MEMORY.md` line (via
 `memex add` when on PATH). The skill lives at
-[skills/remember/SKILL.md](skills/remember/SKILL.md). Install it by linking it into
-your personal skills directory:
+[skills/remember/SKILL.md](skills/remember/SKILL.md) — top level, not `.claude/skills/`,
+because it is an artefact memex ships for every project rather than tooling for
+this repo. Deploy it by linking that directory into your personal skills directory:
 
 ```bash
 mkdir -p ~/.claude/skills
-ln -s ~/.claude/memex/skills/remember ~/.claude/skills/remember
+ln -sfn ~/.claude/memex/skills/remember ~/.claude/skills/remember
 ```
+
+Use `-sfn`, not `-s`. Plain `ln -s` is not idempotent: run it a second time and it
+follows the link it already made and creates the new one *inside* the source, giving
+`skills/remember/remember → skills/remember` — a loop that editors and recursive
+walks descend forever. `-n` treats the existing link as a file rather than a
+directory to write into, and `-f` replaces it. `memex doctor` reports the link's
+state and prints the command to fix it (including removing a loop left by an
+earlier `ln -s`).
+
+Linking rather than copying keeps the skill in step with the editable install: edits
+to `SKILL.md` take effect with no reinstall.
 
 The skill complements the `CLAUDE.md` block: the block guides Claude when you say
 "remember this" in passing, the skill gives you a named command for it.
