@@ -55,6 +55,7 @@ def make_config(tmp_path: Path) -> Callable[..., Config]:
             embed_backend="hash",
             embed_model="test",
             embed_dim=64,
+            embed_cache_dir=tmp_path / "fastembed",
             top_k=3,
             rrf_k=60,
             adaptive_rrf=adaptive_rrf,
