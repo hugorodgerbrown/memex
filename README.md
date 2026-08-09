@@ -488,6 +488,8 @@ schedule, repo binding, and the exact prompt are in
 | `MEMEX_DEDUP_THRESHOLD` | `0.92` | Cosine similarity for dup flagging |
 | `MEMEX_DISTILL_ENABLED` | unset (off) | `1` to enable SessionEnd distillation |
 | `MEMEX_DISTILL_MODEL` | `claude-haiku-4-5-20251001` | Model for distillation |
+| `MEMEX_DISTILL_LOG` | `~/.claude/memory/.memex/distill.log` | Distillation log; set `off` to silence |
+| `MEMEX_DISTILL_DEBUG` | unset (off) | `1` to also log expected non-events — chiefly sessions that ended with no transcript, which zero-turn sessions produce constantly and which would otherwise bury real errors |
 | `MEMEX_LOG` | `/tmp/memex-maintenance.log` | Maintenance log read by `memex health` |
 | `MEMEX_RECALL_LOG` | `~/.claude/memory/.memex/recall.log` | Per-prompt recall audit log read by `memex recall-log`; set `off` to silence |
 

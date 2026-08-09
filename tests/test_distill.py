@@ -120,6 +120,39 @@ def test_log_defaults_override_and_off(tmp_path, monkeypatch) -> None:
     assert "dropped" not in default.read_text(encoding="utf-8")
 
 
+def test_missing_transcript_is_quiet_unless_debug(
+    make_config, tmp_path, monkeypatch
+) -> None:
+    """A session with no transcript stages nothing and logs only under debug."""
+    target = tmp_path / "distill.log"
+    monkeypatch.setenv("MEMEX_DISTILL_LOG", str(target))
+    absent = tmp_path / "gone.jsonl"
+
+    monkeypatch.delenv("MEMEX_DISTILL_DEBUG", raising=False)
+    assert distill.extract(make_config(), absent, "test-model") == []
+    assert not target.exists()
+
+    monkeypatch.setenv("MEMEX_DISTILL_DEBUG", "1")
+    assert distill.extract(make_config(), absent, "test-model") == []
+    assert "no transcript to distil" in target.read_text(encoding="utf-8")
+
+
+def test_empty_transcript_still_logs(make_config, tmp_path, monkeypatch) -> None:
+    """A transcript that condenses to nothing stays visible without debug.
+
+    That case means the file existed but yielded no turns — a parse regression
+    would look exactly like this, so it must not be filed under debug.
+    """
+    target = tmp_path / "distill.log"
+    monkeypatch.setenv("MEMEX_DISTILL_LOG", str(target))
+    monkeypatch.delenv("MEMEX_DISTILL_DEBUG", raising=False)
+    path = tmp_path / "empty.jsonl"
+    path.write_text("", encoding="utf-8")
+
+    assert distill.extract(make_config(), path, "test-model") == []
+    assert "condensed transcript empty" in target.read_text(encoding="utf-8")
+
+
 def test_call_model_distinguishes_auth_error(tmp_path, monkeypatch) -> None:
     """An auth-failure envelope is logged as an error, not a silent empty miss."""
     target = tmp_path / "distill.log"
