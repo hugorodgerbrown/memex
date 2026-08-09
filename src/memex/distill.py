@@ -32,6 +32,10 @@ from .config import Config, Scope
 # the path with ``MEMEX_DISTILL_LOG`` or silence it with ``off``/``none``/empty.
 _DEFAULT_LOG = "~/.claude/memory/.memex/distill.log"
 _LOG_DISABLED = {"", "off", "none", "0"}
+# Set ``MEMEX_DISTILL_DEBUG`` to also log the expected non-events (sessions that
+# ended with no transcript to distil). Off by default: they outnumber real
+# extractions by roughly six to one and drown the lines that matter.
+_DEBUG_ENV = "MEMEX_DISTILL_DEBUG"
 
 
 def _log_path() -> Path | None:
@@ -64,6 +68,16 @@ def _log(message: str) -> None:
             handle.write(f"{stamp} {message}\n")
     except OSError:
         return
+
+
+def _log_debug(message: str) -> None:
+    """Append a line only when ``MEMEX_DISTILL_DEBUG`` is set.
+
+    For outcomes that are expected rather than wrong: they are worth seeing when
+    diagnosing the distiller, and noise the rest of the time.
+    """
+    if os.environ.get(_DEBUG_ENV, "").lower() in ("1", "true", "yes"):
+        _log(message)
 
 
 # Cap on transcript text sent to the model; the tail of a conversation carries
@@ -242,7 +256,11 @@ def call_model(prompt: str, model: str) -> str | None:
 def extract(config: Config, transcript_path: Path, model: str) -> list[Candidate]:
     """Condense the transcript, call the model, and return parsed candidates."""
     if not transcript_path.exists():
-        _log(f"extract: transcript not found: {transcript_path}")
+        # A session that took no turns never writes a transcript — the desktop
+        # app opens and closes such sessions continuously — so a missing file
+        # means there was nothing to distil, not that the path is wrong. Debug
+        # only, so an auth failure or a parse regression stays visible.
+        _log_debug(f"extract: no transcript to distil: {transcript_path}")
         return []
     convo = condense_transcript(transcript_path)
     if not convo.strip():
