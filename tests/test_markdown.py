@@ -24,6 +24,24 @@ def test_parse_extracts_frontmatter_and_links(tmp_path: Path) -> None:
     assert memory.content_hash
 
 
+def test_parse_pinned_flag(tmp_path: Path) -> None:
+    """A ``pinned: true`` field parses to ``memory.pinned``; absent is False."""
+    pinned_path = tmp_path / "pinned.md"
+    pinned_path.write_text(
+        "---\nname: pinned\ndescription: d\npinned: true\n"
+        "metadata:\n  type: feedback\n---\n\nBody.\n",
+        encoding="utf-8",
+    )
+    unpinned_path = tmp_path / "unpinned.md"
+    unpinned_path.write_text(
+        "---\nname: unpinned\ndescription: d\n"
+        "metadata:\n  type: feedback\n---\n\nBody.\n",
+        encoding="utf-8",
+    )
+    assert parse(pinned_path).pinned is True
+    assert parse(unpinned_path).pinned is False
+
+
 def test_parse_without_frontmatter_falls_back_to_stem(tmp_path: Path) -> None:
     """A file with no frontmatter uses its filename stem as the name."""
     path = tmp_path / "bare.md"

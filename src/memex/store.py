@@ -87,7 +87,8 @@ class Store:
                 links        TEXT NOT NULL,
                 content_hash TEXT NOT NULL,
                 indexed_at   TEXT NOT NULL,
-                event_date   TEXT
+                event_date   TEXT,
+                pinned       INTEGER NOT NULL DEFAULT 0
             );
             CREATE TABLE IF NOT EXISTS memory_stats (
                 memory_id     INTEGER PRIMARY KEY
@@ -117,6 +118,11 @@ class Store:
         if "event_date" not in columns:
             self._db.execute("ALTER TABLE memories ADD COLUMN event_date TEXT")
             self._db.commit()
+        if "pinned" not in columns:
+            self._db.execute(
+                "ALTER TABLE memories ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0"
+            )
+            self._db.commit()
 
     # -- indexing -----------------------------------------------------------
 
@@ -134,7 +140,8 @@ class Store:
         if memory_id is not None:
             self._db.execute(
                 "UPDATE memories SET path=?, mtype=?, description=?, body=?, "
-                "links=?, content_hash=?, indexed_at=?, event_date=? WHERE id=?",
+                "links=?, content_hash=?, indexed_at=?, event_date=?, pinned=? "
+                "WHERE id=?",
                 (
                     str(memory.path),
                     memory.mtype,
@@ -144,6 +151,7 @@ class Store:
                     memory.content_hash,
                     _now(),
                     memory.event_date,
+                    int(memory.pinned),
                     memory_id,
                 ),
             )
@@ -152,8 +160,8 @@ class Store:
         else:
             cur = self._db.execute(
                 "INSERT INTO memories (name, path, mtype, description, body, links, "
-                "content_hash, indexed_at, event_date) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "content_hash, indexed_at, event_date, pinned) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     memory.name,
                     str(memory.path),
@@ -164,6 +172,7 @@ class Store:
                     memory.content_hash,
                     _now(),
                     memory.event_date,
+                    int(memory.pinned),
                 ),
             )
             if cur.lastrowid is None:  # pragma: no cover - sqlite always sets it
@@ -230,6 +239,18 @@ class Store:
         except sqlite3.OperationalError:
             return []
         return [(row["rowid"], row["score"]) for row in rows]
+
+    def pinned_ids(self) -> list[int]:
+        """Return ids of memories flagged ``pinned: true``, oldest-created first.
+
+        Oldest-first gives a stable, predictable order when the pinned pool is
+        larger than ``MEMEX_PINNED_MAX`` and some must be left out.
+        """
+        rows = self._db.execute(
+            "SELECT m.id FROM memories m JOIN memory_stats s ON s.memory_id = m.id "
+            "WHERE m.pinned = 1 ORDER BY s.created_at"
+        ).fetchall()
+        return [int(row["id"]) for row in rows]
 
     def document_frequency(self, token: str) -> int:
         """Return how many indexed memories' text contains ``token``."""

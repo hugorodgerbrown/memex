@@ -109,6 +109,7 @@ def add(
     description: str,
     mtype: str,
     body: str,
+    pinned: bool = False,
 ) -> AddResult:
     """Author a new memory file in ``scope`` and append it to that ``MEMORY.md``."""
     target = config.scope(scope)
@@ -124,11 +125,13 @@ def add(
     if path.exists():
         return AddResult(ok=False, reason="exists")
 
+    pinned_line = "pinned: true\n" if pinned else ""
     target.memory_dir.mkdir(parents=True, exist_ok=True)
     path.write_text(
         "---\n"
         f"name: {slug}\n"
         f"description: {description}\n"
+        f"{pinned_line}"
         "metadata:\n"
         f"  type: {mtype}\n"
         "---\n\n"

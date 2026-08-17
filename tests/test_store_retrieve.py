@@ -196,6 +196,39 @@ def test_resolve_supersessions_drops_the_older_near_duplicate(
     assert {h.name for h in hits_on} == {"new-fact"}
 
 
+def test_pinned_memory_recalls_regardless_of_relevance(
+    make_config, write_memory
+) -> None:
+    """A pinned memory surfaces even when the query is entirely unrelated to it."""
+    cfg = make_config()
+    scope = cfg.scopes[0]
+    write_memory(scope, "core-rule", body="always run tox before a PR", pinned=True)
+    write_memory(scope, "unrelated", body="notes about teapots and kettles")
+    store = Store(cfg, scope)
+    index.sync(cfg, scope, store, embeddings.build(cfg), rebuild=True)
+
+    hits = retrieve.retrieve(
+        cfg, [store], embeddings.build(cfg), "teapots", k=1, expand_graph=False
+    )
+
+    names = {h.name: h.via for h in hits}
+    assert names["core-rule"] == "pinned"
+    assert "unrelated" in names
+
+
+def test_pinned_max_caps_the_pinned_pool(make_config, write_memory) -> None:
+    """No more than ``pinned_max`` pinned memories are guaranteed a slot."""
+    cfg = make_config(pinned_max=1)
+    scope = cfg.scopes[0]
+    write_memory(scope, "pin-one", body="first pinned rule", pinned=True)
+    write_memory(scope, "pin-two", body="second pinned rule", pinned=True)
+    store = Store(cfg, scope)
+    index.sync(cfg, scope, store, embeddings.build(cfg), rebuild=True)
+
+    pinned = retrieve._pinned_candidates([store], cfg.pinned_max)
+    assert len(pinned) == 1
+
+
 def test_resolve_supersessions_ignores_pairs_without_event_dates(
     make_config, write_memory
 ) -> None:

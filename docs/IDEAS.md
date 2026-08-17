@@ -138,3 +138,8 @@ tunable (small default, e.g. 5) so an install cannot accidentally pin its way to
 unbounded prompt. Document the field in the README's memory-authoring section and
 `memex add`'s `--pinned` flag would be the natural CLI affordance, though the frontmatter
 key alone is enough for a first cut.
+
+*(Implemented: `pinned: true` frontmatter parses into `MemoryFile.pinned`;
+`Store.pinned_ids` and `retrieve._pinned_candidates` guarantee those memories a
+recall slot ahead of the ranked pool, capped by `MEMEX_PINNED_MAX` — default 5, and
+`memex add --pinned` writes the flag.)*

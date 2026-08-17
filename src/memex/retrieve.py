@@ -17,6 +17,9 @@ The retrieval pipeline, in order:
    vice versa. Each hit is tagged with the scope it came from.
 4. Optionally pull in one hop of ``[[wikilink]]`` neighbours of the top hit
    (within its own scope) so structured recall returns a connected cluster.
+5. Every scope's ``pinned: true`` memories are prepended ahead of the ranked
+   hits, up to ``config.pinned_max`` total — a guaranteed core tier that never
+   competes for a ranked slot (Letta/MemGPT's pinned core-memory blocks).
 """
 
 from __future__ import annotations
@@ -152,6 +155,24 @@ def _fused_candidates(
     return candidates
 
 
+def _pinned_candidates(stores: list[Store], limit: int) -> list[Candidate]:
+    """Return up to ``limit`` pinned memories across ``stores``, tagged ``pinned``.
+
+    Pinned memories bypass ranking entirely, so they carry no fused score (``0.0``)
+    — ordering among themselves is by scope order, then creation time within a
+    scope, and ``limit`` is a hard cap so an install cannot pin its way to an
+    unbounded prompt.
+    """
+    candidates: list[Candidate] = []
+    for store in stores:
+        for memory_id in store.pinned_ids():
+            if len(candidates) >= limit:
+                return candidates
+            multiplier = store.decay_multiplier(memory_id)
+            candidates.append((store, memory_id, 0.0, multiplier, "pinned"))
+    return candidates
+
+
 def retrieve(
     config: Config,
     stores: list[Store],
@@ -166,12 +187,19 @@ def retrieve(
     k = k or config.top_k
     query_vec = embedder.embed_one(query)
 
+    pinned = (
+        _pinned_candidates(stores, config.pinned_max) if config.pinned_max > 0 else []
+    )
+    pinned_ids = {(store, memory_id) for store, memory_id, *_ in pinned}
+
     pool: list[tuple[Store, int, float, float]] = []
     for store in stores:
         candidates = _fused_candidates(config, store, query_vec, query)
         if config.resolve_supersessions:
             candidates = _suppress_superseded(store, candidates, config.dedup_threshold)
         for memory_id, score, multiplier in candidates:
+            if (store, memory_id) in pinned_ids:
+                continue
             pool.append((store, memory_id, score, multiplier))
 
     pool.sort(key=lambda item: item[2], reverse=True)
@@ -179,6 +207,8 @@ def retrieve(
     selected: list[Candidate] = [(*item, "hybrid") for item in pool[:k]]
     if expand_graph and selected:
         selected = _expand(selected)
+    # Pinned memories are guaranteed a slot, ahead of the ranked/expanded hits.
+    selected = pinned + selected
 
     hits: list[Hit] = []
     touch: dict[Store, list[int]] = defaultdict(list)

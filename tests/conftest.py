@@ -51,6 +51,7 @@ def make_config(tmp_path: Path) -> Callable[..., Config]:
         *,
         adaptive_rrf: bool = False,
         resolve_supersessions: bool = False,
+        pinned_max: int = 5,
     ) -> Config:
         scopes = [_scope(name, tmp_path) for name in scope_names]
         return Config(
@@ -63,6 +64,7 @@ def make_config(tmp_path: Path) -> Callable[..., Config]:
             rrf_k=60,
             adaptive_rrf=adaptive_rrf,
             resolve_supersessions=resolve_supersessions,
+            pinned_max=pinned_max,
             decay_half_life_days=30.0,
             decay_floor=0.3,
             decay_ceiling=1.5,
@@ -87,11 +89,13 @@ def write_memory() -> Callable[..., Path]:
         body: str = "",
         mtype: str = "reference",
         event_date: str | None = None,
+        pinned: bool = False,
     ) -> Path:
         path = scope.memory_dir / f"{name}.md"
         event_line = f"event_date: {event_date}\n" if event_date is not None else ""
+        pinned_line = "pinned: true\n" if pinned else ""
         path.write_text(
-            f"---\nname: {name}\ndescription: {description}\n{event_line}"
+            f"---\nname: {name}\ndescription: {description}\n{event_line}{pinned_line}"
             f"metadata:\n  type: {mtype}\n---\n\n{body}\n",
             encoding="utf-8",
         )

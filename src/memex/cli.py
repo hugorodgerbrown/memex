@@ -127,6 +127,12 @@ def _build_parser() -> argparse.ArgumentParser:
         default=None,
         help="memory body text (default: read from stdin)",
     )
+    p_add.add_argument(
+        "--pinned",
+        action="store_true",
+        help="guarantee this memory a recall slot, bypassing ranking (capped by "
+        "MEMEX_PINNED_MAX)",
+    )
     return parser
 
 
@@ -463,6 +469,8 @@ def _cmd_add(
     description: str,
     mtype: str,
     body: str | None,
+    *,
+    pinned: bool = False,
 ) -> int:
     """Author a new memory into the chosen scope, then re-index it."""
     if scope is None:
@@ -476,6 +484,7 @@ def _cmd_add(
         description=description,
         mtype=mtype,
         body=text,
+        pinned=pinned,
     )
     if not result.ok:
         reasons = {
@@ -527,7 +536,13 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_promote(cfg, args.name)
     if args.command == "add":
         return _cmd_add(
-            cfg, args.scope, args.name, args.description, args.mtype, args.body
+            cfg,
+            args.scope,
+            args.name,
+            args.description,
+            args.mtype,
+            args.body,
+            pinned=args.pinned,
         )
     return 1
 
