@@ -143,3 +143,51 @@ key alone is enough for a first cut.
 `Store.pinned_ids` and `retrieve._pinned_candidates` guarantee those memories a
 recall slot ahead of the ranked pool, capped by `MEMEX_PINNED_MAX` — default 5, and
 `memex add --pinned` writes the flag.)*
+
+---
+
+## sqlite-graph-memory — cross-encoder rerank of the fused + graph-expanded pool
+
+**Source:** sqlite-graph-memory — a small (MIT, ~3-star) pilot combining wikilink
+graph expansion with cross-encoder reranking over a markdown vault;
+<https://github.com/Palo-Alto-AI-Research-Lab/sqlite-graph-memory>. No published
+benchmark; the repo ships its own `ab_recall` telemetry table logging how often
+graph expansion promotes a note into the top-N on real queries, rather than a
+paper-style number.
+
+Its retrieval pipeline: dense-retrieve top-60 chunks, expand the top-15 hits by one
+wikilink hop (capped at 40 neighbours), then rerank the *pooled* candidates with a
+cross-encoder (`cross-encoder/mmarco-mMiniLMv2-L12-H384-v1`) down to the final
+top-12. The key design point, stated directly in its docs: "graph expansion is
+candidate generation, not ranking" — a linked neighbour is not assumed relevant
+just because it is linked; it competes in the same reranked pool as everything
+else, and an irrelevant one gets demoted rather than surfaced by association.
+
+**Why this fits Memex:** `retrieve._expand` (`src/memex/retrieve.py`) appends every
+un-visited `[[wikilink]]` neighbour of the top hit with a hard-coded score of
+`0.0` and `via="graph:<name>"` — see `_expand`'s loop, which never scores or
+filters what it adds. A memory two years stale that happens to link the top hit
+is injected exactly as confidently as a fresh, tightly on-topic one; there is no
+mechanism to catch a graph expansion that turned out to be off-topic for *this*
+query. A rerank pass over the fused RRF pool plus its graph-expanded neighbours,
+scored against the actual query text rather than assumed-relevant by link
+proximity, would close that gap using the same "pool, then rerank" shape as
+`sqlite-graph-memory`.
+
+The trade-off is real and is exactly why this is an idea rather than a first cut:
+a cross-encoder is a second model on top of the existing fastembed embedder, adds
+a new dependency, and runs on every `UserPromptSubmit` invocation — the README
+already flags that hook's cost as "not free" even without a second model in the
+loop. Any implementation needs to default off, be benchmarked against plain RRF +
+graph expansion on Memex's own memory sets (much smaller than a typical RAG
+corpus, where a cross-encoder's per-candidate cost matters less), and pick a
+model small enough not to meaningfully change hook latency.
+
+**Concrete first step:** add an optional reranker in `retrieve.py`, gated behind a
+new `MEMEX_RERANK` env var (default off) and `Config.rerank: bool`. When enabled,
+after `_expand` produces the candidate pool (ranked hits + graph neighbours) and
+before the `pinned + selected` merge, score each candidate's `(query, body)` pair
+with a small local cross-encoder (an ONNX cross-encoder via `fastembed`'s own
+`TextCrossEncoder`, which the project already depends on transitively, would avoid
+a new heavyweight dependency) and re-sort by that score instead of the RRF score.
+Leave pinned memories untouched — they are meant to bypass ranking entirely.
