@@ -139,6 +139,50 @@ unbounded prompt. Document the field in the README's memory-authoring section an
 `memex add`'s `--pinned` flag would be the natural CLI affordance, though the frontmatter
 key alone is enough for a first cut.
 
+---
+
+## RecMem — recurrence-gated distillation to cut SessionEnd token cost
+
+**Source:** *RecMem: Recurrence-based Memory Consolidation for Efficient and
+Effective Long-Running LLM Agents*, ACL 2026 Findings; arXiv:2605.16045;
+<https://github.com/CaiusDai/RecMem>  
+**Benchmark:** up to 7.8x lower memory-construction token cost than prior systems
+on LoCoMo, with higher accuracy on both LoCoMo and LongMemEval-S despite spending
+far fewer tokens.
+
+RecMem's agents buffer every incoming interaction in a cheap "subconscious" layer
+indexed with lightweight local embeddings — no LLM involved. An interaction is only
+promoted to expensive LLM-based extraction once it finds a sufficient number of
+semantically similar predecessors already in the buffer: recurrence is the signal
+that a topic is durable and worth the extraction cost, rather than extracting
+eagerly on every interaction and mostly re-deriving facts the store already has.
+
+**Why this fits Memex:** the `SessionEnd` hook calls a model (`MEMEX_DISTILL_MODEL`,
+default Haiku) on every finished session when distillation is enabled, unconditionally
+— the README's own cost note flags this as "not free". Many sessions revisit the same
+ground (the same tooling preference, the same recurring gotcha in a codebase) that a
+prior session already proposed or that already lives in the store, so a fair share of
+those calls extract nothing new. Gating the call on recurrence — has this session's
+content come up before, recently, without yet becoming a memory? — would cut wasted
+calls the same way RecMem cuts them, using infrastructure Memex already has: the
+fastembed embedder that powers the main index.
+
+RecMem's granularity is per-interaction within one long-running conversation; Memex's
+distillation unit is a whole finished session, so the mapping is not one-to-one and
+needs a real design pass (what "recurrence" means across separate sessions, how long
+a candidate topic waits before its recurrence expires, where the buffer lives and how
+it is pruned) rather than a mechanical port — hence an idea, not a first cut.
+
+**Concrete first step:** embed each session's condensed transcript (already computed
+in `distill.condense_transcript`) with the existing `Embedder`, and keep a small
+rolling buffer of recent session embeddings per scope (e.g.
+`<scope>/.memex/distill_buffer.jsonl`, capped by count and age). Before calling
+`call_model`, compare the new embedding against the buffer via cosine similarity; only
+proceed to the LLM extraction when at least `MEMEX_DISTILL_RECURRENCE_MIN` (default
+2) prior buffered sessions clear a similarity threshold, otherwise just append to the
+buffer and skip the call. Default the threshold high enough that it never blocks a
+single novel session's first-ever distillation from happening eventually, once it
+recurs.
 *(Implemented: `pinned: true` frontmatter parses into `MemoryFile.pinned`;
 `Store.pinned_ids` and `retrieve._pinned_candidates` guarantee those memories a
 recall slot ahead of the ranked pool, capped by `MEMEX_PINNED_MAX` — default 5, and
