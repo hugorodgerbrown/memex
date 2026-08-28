@@ -163,6 +163,21 @@ def test_add_writes_file_and_index_line(make_config) -> None:
     assert "always-use-tox.md" in index
 
 
+def test_add_pinned_writes_frontmatter_flag(make_config) -> None:
+    cfg = make_config(("global",))
+    result = authoring.add(
+        cfg,
+        scope="global",
+        name="always-run-tox",
+        description="tox runs CI",
+        mtype="feedback",
+        body="Always run tox before a PR.",
+        pinned=True,
+    )
+    assert result.ok
+    assert "pinned: true" in result.path.read_text(encoding="utf-8")
+
+
 def test_add_rejects_duplicate(make_config, write_memory) -> None:
     cfg = make_config(("global",))
     write_memory(_global(cfg), "taken", body="existing")
