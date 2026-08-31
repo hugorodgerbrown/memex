@@ -235,3 +235,43 @@ with a small local cross-encoder (an ONNX cross-encoder via `fastembed`'s own
 `TextCrossEncoder`, which the project already depends on transitively, would avoid
 a new heavyweight dependency) and re-sort by that score instead of the RRF score.
 Leave pinned memories untouched — they are meant to bypass ranking entirely.
+
+---
+
+## ReMe — active digest consolidation vs. the dream cycle's advisory-only stance
+
+**Source:** ReMe — *Memory Management Kit for Agents*;
+<https://github.com/agentscope-ai/ReMe>. Apache-2.0, ~3.4k GitHub stars, active
+as of 2026.08; ACL 2026 Findings.
+
+ReMe is close enough to Memex's own design to read as convergent evolution: durable
+memory as plain Markdown with YAML frontmatter and `[[wikilinks]]` ("memory as
+file, file as memory"), BM25 by default with optional vector search fused by RRF,
+and a periodic `auto_dream` pass — the same name Memex independently settled on.
+The difference is what that pass is allowed to do. ReMe's workspace is layered
+(`session/` → `daily/` → `digest/`), and `auto_dream` actively *writes*: it
+extracts reusable units from recent files and creates, corroborates, refines, or
+corrects nodes in the `digest/` layer — a standing, evolving summary tier that
+consolidation itself maintains.
+
+**Why this fits Memex, and why it's an idea rather than a first cut:** Memex's own
+`dream.py` module docstring states the current design is "deliberately advisory:
+it writes a dated report and updates salience scores, but it never edits or
+deletes a memory file… this keeps the 'never silently destroy memory' guarantee
+every system surveyed learned the hard way." ReMe shows that guarantee doesn't
+have to mean *no consolidation writes at all* — corroborate/refine/correct on a
+distinct `digest/`-style tier, separate from the human-or-Claude-authored source
+files, could let the dream cycle synthesise a standing summary (e.g. "what this
+project's memories currently say about X") without ever touching an original
+memory file. That is a real design decision (a new memory class, ownership rules
+for who edits a digest node, how it interacts with decay and citation) rather than
+a mechanical port, hence backlog rather than a PR.
+
+**Concrete first step, if picked up:** prototype a single opt-in digest file per
+scope (`<scope>/.memex/digest.md`, clearly marked machine-generated, excluded from
+`memex add`/`memex promote`) that `memex dream` regenerates each run by summarising
+the current top-salience memories in that scope — read-only relative to the real
+memory files, so it adds a new artefact rather than touching the "never silently
+destroy memory" guarantee. Index it as an ordinary low-priority recall candidate
+and see whether it measurably helps broad, cross-memory questions that no single
+memory answers well today.
