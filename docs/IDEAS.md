@@ -275,3 +275,90 @@ memory files, so it adds a new artefact rather than touching the "never silently
 destroy memory" guarantee. Index it as an ordinary low-priority recall candidate
 and see whether it measurably helps broad, cross-memory questions that no single
 memory answers well today.
+
+---
+
+## OKF — a standard trust vocabulary for memory frontmatter
+
+**Source:** Open Knowledge Format v0.2 — a specification, not a system;
+<https://github.com/GoogleCloudPlatform/knowledge-catalog/blob/main/okf/SPEC.md>.
+Published by Google Cloud, Apache-2.0. No benchmark and no observable adoption
+outside its own repo, so the interop argument for it is speculative today; the
+value here is the vocabulary, not conformance.
+
+OKF specifies a "knowledge bundle" as a directory of Markdown files with YAML
+frontmatter — no schema registry, no runtime, no SDK. Conformance is deliberately
+trivial (parseable frontmatter plus a non-empty `type`), and consumers MUST NOT
+reject a document for missing optional fields, unknown types, unknown keys, or
+broken links. On top of that floor it standardises four optional field families
+aimed squarely at a corpus that agents write and maintain rather than humans:
+
+- **Provenance** — `sources: [{id, resource, title, author, usage_count,
+  last_modified}]` with a `usage_window: {from, to}` sibling. It records objective
+  per-source signals and deliberately stores no credibility *score*, on the
+  grounds that a score is subjective, unportable, and goes stale.
+- **Trust** — `generated: {by, at}` (who produced the content) kept distinct from
+  `verified: [{by, at}]` (who has since confirmed it), because the writer is not
+  the confirmer. Actors follow one convention: `human:<id>`, `<producer>/<version>`
+  for agents, `process:<id>`. Consumers derive a tier from `verified` alone —
+  absent ⇒ unverified, non-human actors ⇒ machine-confirmed, a `human:` actor ⇒
+  human-reviewed.
+- **Lifecycle** — `status: draft | stable | deprecated` (absent ⇒ stable) and
+  `stale_after`, an absolute instant rather than a relative TTL so staleness is a
+  plain `now >= stale_after` comparison with no reference to read time.
+- **Attestation** — `type: Attested Computation` with `runtime`, `parameters`,
+  `executor`, `attester`, for confirming a number was produced by running the
+  sanctioned computation. This family is data-catalog machinery with no analogue
+  in a personal memory store and is not proposed here.
+
+**Why this fits Memex:** Memex is already structurally an OKF bundle by accident —
+Markdown files, YAML frontmatter, a `type`, a `description` — and `distill._render`
+has independently reinvented a private, nested subset of exactly these families:
+`metadata.status: proposed`, `metadata.source: distill`, `metadata.origin_session`.
+The reinvention is lossy in one specific place. `distill.accept` promotes a
+candidate by string-replacing `  status: proposed\n` out of the file and writing
+it to the scope's memory dir; it records nothing about *who* accepted it or *when*.
+The README frames the accept as the system's central guarantee — "the **accept is
+the gate** — nothing the model proposes enters the live store on its own" — yet the
+single most important trust event in the pipeline leaves no trace on disk. Once
+accepted, a distilled memory and a hand-authored one are distinguishable only by a
+vestigial `source: distill` key. OKF's `verified: {by: human:<id>, at: <ts>}` is
+that missing record, and its trust tiers are a direct read of the gate Memex
+already enforces.
+
+Three of the other fields close gaps the backlog has already circled:
+`generated: {by, at}` names which model proposed a memory, so "why does Memex think
+I prefer X" has an audit trail beyond an opaque `origin_session` id; `status:
+deprecated` gives the dream cycle's supersession detection somewhere to write a
+verdict, a third option between deleting a file and letting decay quietly sink it,
+without breaking the "never silently destroy memory" guarantee `dream.py` states;
+and `stale_after` adds a deterministic, absolute staleness check alongside decay's
+soft relative re-ranking, continuing the line of "keep freshness resolution in
+deterministic code" already argued in the Zep/Graphiti entry above. A fifth field,
+`usage_count` over a `usage_window`, is data `recall_log.py` already collects per
+turn and never surfaces back onto the memory.
+
+**Why this is an idea rather than a first cut:** the fields are cheap, but the
+decisions around them are not. Trust tiers are only worth recording if something
+*reads* them — whether an unverified memory should be ranked below a human-verified
+one, or excluded from hook injection entirely, is a retrieval policy change, not a
+frontmatter change. `status: deprecated` needs an owner (does `memex dream` write
+it, or only propose it?) before it can be honoured at query time. And full OKF
+conformance is explicitly not the goal: `[[wikilinks]]` are load-bearing for the
+entity graph in `markdown.py` and OKF has no wikilink concept, `MEMORY.md` collides
+with the reserved `index.md`, and renaming `name` to OKF's `title` is churn across
+the store and index for no benefit. Memex also carries `event_date` and `pinned`,
+which OKF has no equivalent for — bitemporality is a thing Memex has and the spec
+lacks, so this is selective borrowing in both directions.
+
+**Concrete first step, if picked up:** flatten and standardise what distillation
+already writes, without changing retrieval behaviour. In `distill._render`, emit
+top-level `generated: {by: <model-id>, at: <ISO-8601 UTC>}` alongside the existing
+`metadata` block; in `distill.accept`, stop string-replacing the status line out
+and instead set `status: stable` and append `verified: {by: human:<id>, at: <ts>}`
+by parsing and re-emitting the frontmatter, so the gate is recorded rather than
+erased. Parse `generated`, `verified`, `status`, and `stale_after` in
+`markdown.parse` onto `MemoryFile` and leave them unused by ranking for now. Then
+surface the derived trust tier in `memex list` and the dream report, and decide
+from real data whether a tier or a passed `stale_after` should influence recall
+before wiring either into `retrieve.py`.
