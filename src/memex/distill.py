@@ -296,17 +296,27 @@ def stage(
         directory = _candidates_dir(scope)
         directory.mkdir(parents=True, exist_ok=True)
         path = directory / f"{candidate.name}.md"
-        path.write_text(_render(candidate, session_id=session_id), encoding="utf-8")
+        text = _render(candidate, session_id=session_id, model=config.distill_model)
+        path.write_text(text, encoding="utf-8")
         written.append(path)
     return written
 
 
-def _render(candidate: Candidate, *, session_id: str) -> str:
-    """Render a candidate to staged Markdown with frontmatter."""
+def _render(candidate: Candidate, *, session_id: str, model: str) -> str:
+    """Render a candidate to staged Markdown with frontmatter.
+
+    ``generated`` records which model proposed the candidate and when, so a
+    distilled memory carries provenance from the moment it is staged rather
+    than only the opaque ``origin_session`` id — see the OKF trust vocabulary
+    entry in docs/IDEAS.md.
+    """
     return (
         "---\n"
         f"name: {candidate.name}\n"
         f"description: {candidate.description}\n"
+        "generated:\n"
+        f"  by: {model}\n"
+        f'  at: "{_now_iso()}"\n'
         "metadata:\n"
         "  node_type: memory\n"
         f"  type: {candidate.mtype}\n"
@@ -317,6 +327,16 @@ def _render(candidate: Candidate, *, session_id: str) -> str:
         "---\n\n"
         f"{candidate.body}\n"
     )
+
+
+def _now_iso() -> str:
+    """Current UTC time as an ISO-8601 timestamp with a ``Z`` suffix."""
+    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+
+
+def _actor() -> str:
+    """Best-effort local username for a ``verified.by`` field."""
+    return os.environ.get("USER") or os.environ.get("USERNAME") or "unknown"
 
 
 @dataclass
@@ -353,6 +373,12 @@ def discard(config: Config, name: str) -> bool:
 def accept(config: Config, name: str) -> Path | None:
     """Promote a staged candidate into its scope's live memory directory.
 
+    Drops ``status: proposed`` and stamps a top-level ``verified: {by, at}``
+    block naming who accepted the candidate and when. The accept is the
+    pipeline's central trust gate — "nothing the model proposes enters the
+    live store on its own" — and previously left no trace of that event on
+    disk; see the OKF trust vocabulary entry in docs/IDEAS.md.
+
     Returns the destination path, or ``None`` if no such candidate exists or a
     live memory already uses that name.
     """
@@ -364,7 +390,23 @@ def accept(config: Config, name: str) -> Path | None:
         if destination.exists():
             return None
         text = source.read_text(encoding="utf-8").replace("  status: proposed\n", "")
+        text = _stamp_verified(text)
         destination.write_text(text, encoding="utf-8")
         source.unlink()
         return destination
     return None
+
+
+def _stamp_verified(text: str) -> str:
+    """Insert a ``verified: {by, at}`` block before the frontmatter's close.
+
+    Only ever called on files this module wrote via :func:`_render`, so the
+    frontmatter shape (ending in ``---\\n\\n``) is known rather than
+    guessed at.
+    """
+    marker = "\n---\n"
+    head, sep, rest = text.partition(marker)
+    if not sep:
+        return text
+    stamp = f'verified:\n  by: human:{_actor()}\n  at: "{_now_iso()}"'
+    return f"{head}\n{stamp}{sep}{rest}"

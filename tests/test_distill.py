@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 
 from memex import distill
+from memex.markdown import parse
 
 
 def _write_transcript(path: Path) -> None:
@@ -60,15 +61,40 @@ def test_stage_list_accept_round_trip(make_config) -> None:
     )
     written = distill.stage(cfg, [candidate], session_id="t")
     assert written and written[0].exists()
+    staged_text = written[0].read_text(encoding="utf-8")
+    assert "generated:\n  by: test\n" in staged_text
 
     staged = distill.list_candidates(cfg)
     assert [s.name for s in staged] == ["use-ruff"]
 
     destination = distill.accept(cfg, "use-ruff")
     assert destination is not None and destination.exists()
-    assert "status: proposed" not in destination.read_text(encoding="utf-8")
+    live_text = destination.read_text(encoding="utf-8")
+    assert "status: proposed" not in live_text
+    assert "verified:\n  by: human:" in live_text
     # The staged copy is consumed on accept.
     assert not distill.list_candidates(cfg)
+
+
+def test_accept_stamps_verified_actor_and_time(make_config, monkeypatch) -> None:
+    """``accept`` records who accepted a candidate and when."""
+    monkeypatch.setenv("USER", "alex")
+    cfg = make_config()
+    candidate = distill.Candidate(
+        scope="global",
+        name="use-tox",
+        description="tox drives CI",
+        mtype="feedback",
+        body="Always run tox before a PR.",
+    )
+    distill.stage(cfg, [candidate], session_id="t")
+    destination = distill.accept(cfg, "use-tox")
+    assert destination is not None
+    memory = parse(destination)
+    assert memory.verified_by == "human:alex"
+    assert memory.verified_at is not None
+    assert memory.generated_by == "test"
+    assert memory.generated_at is not None
 
 
 def test_extract_uses_model_output(make_config, tmp_path, monkeypatch) -> None:

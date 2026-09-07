@@ -42,6 +42,34 @@ def test_parse_pinned_flag(tmp_path: Path) -> None:
     assert parse(unpinned_path).pinned is False
 
 
+def test_parse_generated_and_verified_stamps(tmp_path: Path) -> None:
+    """Optional ``generated``/``verified`` maps parse to their flat fields."""
+    stamped_path = tmp_path / "stamped.md"
+    stamped_path.write_text(
+        "---\nname: stamped\ndescription: d\n"
+        'generated:\n  by: claude-haiku-4-5\n  at: "2026-09-01T00:00:00Z"\n'
+        'verified:\n  by: human:hugo\n  at: "2026-09-02T00:00:00Z"\n'
+        "metadata:\n  type: feedback\n---\n\nBody.\n",
+        encoding="utf-8",
+    )
+    memory = parse(stamped_path)
+    assert memory.generated_by == "claude-haiku-4-5"
+    assert memory.generated_at == "2026-09-01T00:00:00Z"
+    assert memory.verified_by == "human:hugo"
+    assert memory.verified_at == "2026-09-02T00:00:00Z"
+
+    plain_path = tmp_path / "plain.md"
+    plain_path.write_text(
+        "---\nname: plain\ndescription: d\nmetadata:\n  type: feedback\n---\n\nBody.\n",
+        encoding="utf-8",
+    )
+    plain = parse(plain_path)
+    assert plain.generated_by is None
+    assert plain.generated_at is None
+    assert plain.verified_by is None
+    assert plain.verified_at is None
+
+
 def test_parse_without_frontmatter_falls_back_to_stem(tmp_path: Path) -> None:
     """A file with no frontmatter uses its filename stem as the name."""
     path = tmp_path / "bare.md"

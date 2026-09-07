@@ -362,3 +362,11 @@ erased. Parse `generated`, `verified`, `status`, and `stale_after` in
 surface the derived trust tier in `memex list` and the dream report, and decide
 from real data whether a tier or a passed `stale_after` should influence recall
 before wiring either into `retrieve.py`.
+
+*(Partly implemented: `distill._render` now emits `generated: {by, at}` when a
+candidate is staged, and `distill.accept` stamps `verified: {by: human:<user>,
+at}` in place of silently erasing `status: proposed` — the accept gate the
+README calls central now leaves a trace. `markdown.parse` reads both maps onto
+`MemoryFile.generated_by/_at/verified_by/_at`, unused by ranking. Still open:
+`status`/`stale_after`, and surfacing the derived trust tier in `memex list`
+and the dream report.)*
