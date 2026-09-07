@@ -38,6 +38,10 @@ class MemoryFile:
     content_hash: str = ""
     event_date: str | None = None  # optional YYYY-MM-DD string
     pinned: bool = False  # bypasses ranked recall; see retrieve._pinned_candidates
+    generated_by: str | None = None  # model that proposed this memory, if distilled
+    generated_at: str | None = None  # ISO-8601 timestamp of that proposal
+    verified_by: str | None = None  # who accepted it into the live store
+    verified_at: str | None = None  # ISO-8601 timestamp of that accept
 
     @property
     def searchable_text(self) -> str:
@@ -91,6 +95,15 @@ def parse(path: Path) -> MemoryFile:
 
     pinned = bool(front.get("pinned", False))
 
+    # OKF-style trust provenance (docs/IDEAS.md): who/what produced this memory
+    # and who has since confirmed it. Both are optional maps of {by, at};
+    # anything else (absent, wrong shape) is treated as not present rather
+    # than raising, since these fields do not yet gate anything.
+    generated = front.get("generated")
+    generated_by, generated_at = _actor_stamp(generated)
+    verified = front.get("verified")
+    verified_by, verified_at = _actor_stamp(verified)
+
     links = sorted({_normalise_link(t) for t in _WIKILINK.findall(body)})
 
     return MemoryFile(
@@ -103,7 +116,20 @@ def parse(path: Path) -> MemoryFile:
         content_hash=content_hash,
         event_date=event_date,
         pinned=pinned,
+        generated_by=generated_by,
+        generated_at=generated_at,
+        verified_by=verified_by,
+        verified_at=verified_at,
     )
+
+
+def _actor_stamp(value: object) -> tuple[str | None, str | None]:
+    """Pull ``(by, at)`` out of an optional ``{by, at}`` frontmatter mapping."""
+    if not isinstance(value, dict):
+        return None, None
+    by = value.get("by")
+    at = value.get("at")
+    return (str(by) if by is not None else None, str(at) if at is not None else None)
 
 
 def iter_memory_files(memory_dir: Path) -> list[Path]:
