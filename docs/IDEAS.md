@@ -362,3 +362,51 @@ erased. Parse `generated`, `verified`, `status`, and `stale_after` in
 surface the derived trust tier in `memex list` and the dream report, and decide
 from real data whether a tier or a passed `stale_after` should influence recall
 before wiring either into `retrieve.py`.
+
+---
+
+## Hindsight — confidence-scored beliefs as a distinct memory epistemic class
+
+**Source:** Hindsight (Vectorize) — *Hindsight is 20/20: Building Agent Memory that
+Retains, Recalls, and Reflects*, arXiv:2512.12818 (December 2025);
+<https://github.com/vectorize-io/hindsight>. MIT licence, 16k+ GitHub stars within
+seven months of release, active as of 2026.09. 91.4 % on LongMemEval — the first
+published agent-memory system to clear 90 % on that benchmark.
+
+Hindsight splits everything it retains into four networks, each carrying a distinct
+epistemic status rather than one undifferentiated memory type: **World** (objective
+facts), **Experience** (the agent's own actions), **Observation** (synthesised entity
+summaries built by reflecting over facts and experience), and **Opinion** (evolving
+beliefs, each carrying a confidence score that is revised as new evidence arrives).
+The reflection step that produces Observation and Opinion entries runs as a distinct
+pass from raw retention — `Retain` versus `Reflect` in Hindsight's three-verb API — so
+a synthesised belief is never confused with a directly observed fact.
+
+**Why this fits Memex:** Memex's `type` metadata field (`user | feedback | project |
+reference`, enforced in `distill._VALID_TYPES` and used the same way for
+hand-authored memories) distinguishes a memory by *where it came from*, not by *how
+certain the fact is*. "The user prefers dark mode" and "the auth handshake uses
+HS256" are both just Markdown files today, with no field recording that the first is
+a stated preference while a distilled inference such as "the user seems to dislike
+verbose commit messages" is a far softer, revisable belief extracted from a handful
+of sessions. Both currently get identical, unconditional recall treatment. This is a
+different axis from the OKF trust vocabulary logged above — OKF's `verified`/
+`generated` fields record *who confirmed a memory and when*; confidence records *how
+sure the memory is*, independent of who wrote or checked it — so the two ideas are
+complementary, not overlapping, and would naturally sit in the same frontmatter block.
+
+**Why this is an idea rather than a first cut:** as with OKF, the field is cheap but
+the policy is not. Does a low-confidence opinion rank lower in `retrieve.py`, get
+excluded from hook injection below some threshold, or just display differently in
+`memex list`/`memex stats`? Distillation would also need a real prompt change —
+`distill.build_prompt` (`src/memex/distill.py`) would have to ask the model to tell a
+settled fact from an inferred belief and estimate a confidence for the latter, which
+is a genuine judgement call for a small model rather than a mechanical parse. Worth a
+design pass once OKF's trust fields land, since both extend the same frontmatter.
+
+**Concrete first step:** add an optional `confidence: <0.0-1.0>` frontmatter field,
+parsed in `markdown.py` alongside the existing `event_date`/`pinned` fields; have
+`distill.build_prompt` ask the model to attach a confidence value only to candidates
+it flags as inferred rather than stated; surface the field, unused by ranking, in
+`memex list` — the same "parse and expose before wiring into retrieval" sequencing
+the OKF entry above proposes for its own fields.
