@@ -6,7 +6,9 @@ the critical path (cron / a scheduled routine) and:
 * flags near-duplicate memories that should probably be merged;
 * recomputes salience (access frequency + inbound graph links);
 * reports broken ``[[wikilinks]]`` and memories missing from ``MEMORY.md``;
-* suggests ``[[wikilinks]]`` a memory's text names but does not yet link.
+* suggests ``[[wikilinks]]`` a memory's text names but does not yet link;
+* suggests ``[[wikilinks]]`` between memories the recall log shows being
+  retrieved together often, whether or not either one's text names the other.
 
 It is deliberately advisory: it writes a dated report and updates salience
 scores, but it never edits or deletes a memory file. A human (or a gated
@@ -17,10 +19,12 @@ guarantee that every system surveyed learned the hard way.
 from __future__ import annotations
 
 import datetime as dt
+import itertools
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from . import recall_log
 from .config import Config, Scope
 from .store import Store
 
@@ -42,6 +46,7 @@ class DreamReport:
     supersessions: list[tuple[str, str, float]] = field(default_factory=list)
     broken_links: list[tuple[str, str]] = field(default_factory=list)
     missing_links: list[tuple[str, str]] = field(default_factory=list)
+    coretrieved: list[tuple[str, str, int]] = field(default_factory=list)
     unindexed_in_memory_md: list[str] = field(default_factory=list)
     salience: list[tuple[str, float]] = field(default_factory=list)
 
@@ -98,6 +103,42 @@ def _mentioned_but_unlinked(records: list[dict]) -> list[tuple[str, str]]:
     return findings
 
 
+def _frequently_coretrieved(
+    records: list[dict],
+    known: set[str],
+    log_records: list[dict],
+    min_count: int,
+) -> list[tuple[str, str, int]]:
+    """Return unlinked pairs the recall log shows being retrieved together often.
+
+    Retrieval-driven reconsolidation (arXiv:2609.16053, "Retrieval-Driven Memory
+    Reconsolidation for Long-Term LLM Agents") argues that retrieval should not
+    just answer the current prompt but feed back into how memory is organised.
+    This is the deterministic, LLM-free slice of that idea Memex can take without
+    the paper's cognitive-graph machinery: two memories in this scope that keep
+    showing up in the same ``UserPromptSubmit`` hit set are evidence of a real
+    relationship, independent of whether either one's text names the other (the
+    signal ``_mentioned_but_unlinked`` looks for). Advisory only, like every other
+    dream-cycle finding.
+    """
+    linked = {record["name"]: set(record["links"]) for record in records}
+    counts: dict[tuple[str, str], int] = {}
+    for entry in log_records:
+        names = sorted({hit.get("name", "") for hit in entry.get("hits", [])} & known)
+        for a, b in itertools.combinations(names, 2):
+            counts[(a, b)] = counts.get((a, b), 0) + 1
+
+    findings = [
+        (a, b, count)
+        for (a, b), count in counts.items()
+        if count >= min_count
+        and b not in linked.get(a, set())
+        and a not in linked.get(b, set())
+    ]
+    findings.sort(key=lambda item: (-item[2], item[0], item[1]))
+    return findings
+
+
 def run(config: Config, scope: Scope, store: Store) -> DreamReport:
     """Execute the consolidation pass for one ``scope`` and return its report."""
     records = store.all_records()
@@ -141,6 +182,12 @@ def run(config: Config, scope: Scope, store: Store) -> DreamReport:
     report.salience.sort(key=lambda item: item[1], reverse=True)
 
     report.missing_links = _mentioned_but_unlinked(records)
+    log_records = (
+        recall_log.tail(config.recall_log, n=0) if config.recall_log is not None else []
+    )
+    report.coretrieved = _frequently_coretrieved(
+        records, known, log_records, config.cooccurrence_min
+    )
     report.unindexed_in_memory_md = _missing_from_index_file(scope, known)
     return report
 
@@ -195,6 +242,19 @@ def write_report(scope: Scope, report: DreamReport, *, today: str) -> Path:
         lines += [
             f"- `{source}` mentions `{target}` — consider `[[{target}]]`"
             for source, target in report.missing_links
+        ]
+    else:
+        lines.append("_None found._")
+
+    lines += [
+        "",
+        "## Frequently co-retrieved but unlinked (retrieval feedback)",
+        "",
+    ]
+    if report.coretrieved:
+        lines += [
+            f"- `{a}` ↔ `{b}` (retrieved together {count}×) — consider `[[{b}]]`"
+            for a, b, count in report.coretrieved
         ]
     else:
         lines.append("_None found._")
