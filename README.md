@@ -429,9 +429,10 @@ and surface the reports.
 
 The pass is **advisory**: it writes a dated report per scope (candidate
 duplicates, broken `[[wikilinks]]`, possible missing `[[wikilinks]]` — a memory
-naming another by its exact slug without linking it — memories missing from
-`MEMORY.md`, salience ranking) and updates salience scores, but never edits or
-deletes a memory file.
+naming another by its exact slug without linking it — pairs the recall log shows
+being retrieved together often without either linking the other, memories
+missing from `MEMORY.md`, salience ranking) and updates salience scores, but
+never edits or deletes a memory file.
 
 ### Did it run? — `memex health`
 
@@ -487,6 +488,7 @@ schedule, repo binding, and the exact prompt are in
 | `MEMEX_DECAY_HALF_LIFE` | `30` | Days; recency half-life |
 | `MEMEX_DECAY_FLOOR` / `_CEILING` | `0.3` / `1.5` | Decay multiplier bounds |
 | `MEMEX_DEDUP_THRESHOLD` | `0.92` | Cosine similarity for dup flagging |
+| `MEMEX_COOCCURRENCE_MIN` | `3` | Times two unlinked memories must appear together in the recall log before the dream cycle suggests a `[[wikilink]]` between them |
 | `MEMEX_DISTILL_ENABLED` | unset (off) | `1` to enable SessionEnd distillation |
 | `MEMEX_DISTILL_MODEL` | `claude-haiku-4-5-20251001` | Model for distillation |
 | `MEMEX_DISTILL_LOG` | `~/.claude/memory/.memex/distill.log` | Distillation log; set `off` to silence |
@@ -506,11 +508,12 @@ schedule, repo binding, and the exact prompt are in
 
 ## Context: prior art, second brains, and the LLM OS
 
-Memex is a synthesis, not a new idea. It takes concrete mechanisms from seven
+Memex is a synthesis, not a new idea. It takes concrete mechanisms from eight
 agent-memory projects and assembles them under one Claude Code-native install.
-The first four shaped the original design; Zep/Graphiti, Cognee, and Letta/MemGPT
-were folded in later, via the self-update routine, as the dream cycle grew
-bitemporal and graph-suggestion features and recall grew a pinned core tier.
+The first four shaped the original design; Zep/Graphiti, Cognee, Letta/MemGPT,
+and REALM were folded in later, via the self-update routine, as the dream cycle
+grew bitemporal, text-mention, and retrieval-feedback graph-suggestion features
+and recall grew a pinned core tier.
 
 ### Prior art — the memory projects it draws from
 
@@ -523,9 +526,10 @@ bitemporal and graph-suggestion features and recall grew a pinned core tier.
 | [Zep / Graphiti](https://github.com/getzep/graphiti) | A temporal knowledge graph for agent memory; every edge carries both *event time* (when a fact was true) and *ingestion time* (when it was recorded) | **Bitemporal `event_date`** — an optional frontmatter field that lets the dream cycle tell a genuine near-duplicate from a fact that changed over time, splitting its report into duplicates and possible supersessions |
 | [Cognee](https://github.com/topoteretes/cognee) | An Extract-Cognify-Load pipeline that builds a knowledge graph from arbitrary documents via LLM-driven entity extraction | The **idea, not the machinery**, behind mentioned-but-unlinked detection — the wikilink graph stays LLM-free, but the dream cycle scans each memory's text for another memory's exact slug and flags it as a candidate `[[wikilink]]` |
 | [Letta / MemGPT](https://github.com/letta-ai/letta) | An agent-memory OS that splits context into tiers; the load-bearing primitive is the **memory block** — a small labelled string that stays permanently in context, edited in place rather than retrieved by ranked search | **Pinned core-memory blocks**: an optional `pinned: true` frontmatter field that guarantees a memory a recall slot ahead of ranking (capped by `MEMEX_PINNED_MAX`), so a handful of load-bearing facts are never one bad query away from being dropped |
+| [REALM](https://arxiv.org/abs/2609.16053) | A research framework (no public release) arguing that retrieval should feed back into how agent memory is organised, not just answer the current prompt, by reconsolidating a cognitive graph from retrieval feedback | The **idea, not the machinery**: the dream cycle mines the recall log for memory pairs retrieved together often enough to suggest a `[[wikilink]]`, independent of whether either one's text names the other — real usage as graph-suggestion evidence, without an LLM or a bespoke graph store |
 
 The one-line provenance at the top of this README maps the founding four
-mechanisms back to their source. Where Memex differs from all seven: it spans
+mechanisms back to their source. Where Memex differs from all eight: it spans
 **two scopes at once** (global + project) in a single ranked recall, and it stays
 **file-first** with no required database server — one SQLite file per scope,
 rebuildable from the Markdown.

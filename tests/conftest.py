@@ -52,6 +52,8 @@ def make_config(tmp_path: Path) -> Callable[..., Config]:
         adaptive_rrf: bool = False,
         resolve_supersessions: bool = False,
         pinned_max: int = 5,
+        cooccurrence_min: int = 3,
+        recall_log: Path | None = None,
     ) -> Config:
         scopes = [_scope(name, tmp_path) for name in scope_names]
         return Config(
@@ -69,9 +71,10 @@ def make_config(tmp_path: Path) -> Callable[..., Config]:
             decay_floor=0.3,
             decay_ceiling=1.5,
             dedup_threshold=0.92,
+            cooccurrence_min=cooccurrence_min,
             distill_model="test",
             maintenance_log=tmp_path / "maintenance.log",
-            recall_log=None,
+            recall_log=recall_log,
         )
 
     return _make

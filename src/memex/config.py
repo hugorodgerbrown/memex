@@ -102,6 +102,7 @@ class Config:
     decay_floor: float
     decay_ceiling: float
     dedup_threshold: float
+    cooccurrence_min: int
     distill_model: str
     maintenance_log: Path
     recall_log: Path | None
@@ -221,6 +222,7 @@ def _with_tunables(scopes: list[Scope]) -> Config:
         decay_floor=float(os.environ.get("MEMEX_DECAY_FLOOR", "0.3")),
         decay_ceiling=float(os.environ.get("MEMEX_DECAY_CEILING", "1.5")),
         dedup_threshold=float(os.environ.get("MEMEX_DEDUP_THRESHOLD", "0.92")),
+        cooccurrence_min=int(os.environ.get("MEMEX_COOCCURRENCE_MIN", "3")),
         distill_model=os.environ.get(
             "MEMEX_DISTILL_MODEL", "claude-haiku-4-5-20251001"
         ),

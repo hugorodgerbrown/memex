@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 from memex import dream, embeddings, index
 from memex.store import Store
 
@@ -79,6 +82,82 @@ def test_dream_close_event_dates_stay_duplicates(make_config, write_memory) -> N
     super_pairs = {tuple(sorted((a, b))) for a, b, _sim in report.supersessions}
     assert ("dup-a", "dup-b") in dup_pairs
     assert ("dup-a", "dup-b") not in super_pairs
+
+
+def _write_recall_log(path: Path, hit_names: list[list[str]]) -> None:
+    """Write a synthetic recall log with one record per element of ``hit_names``."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8") as handle:
+        for names in hit_names:
+            record = {
+                "ts": "2026-06-26T00:00:00Z",
+                "cwd": "",
+                "prompt": "test",
+                "hits": [
+                    {
+                        "name": name,
+                        "scope": "global",
+                        "mtype": "reference",
+                        "score": 1.0,
+                    }
+                    for name in names
+                ],
+            }
+            handle.write(json.dumps(record) + "\n")
+
+
+def test_dream_flags_frequently_coretrieved_unlinked_pairs(
+    make_config, write_memory, tmp_path
+) -> None:
+    """Two unlinked memories retrieved together often enough are flagged."""
+    recall_log_path = tmp_path / "recall.log"
+    cfg = make_config(recall_log=recall_log_path, cooccurrence_min=3)
+    scope = cfg.scopes[0]
+    write_memory(scope, "alpha", body="first memory")
+    write_memory(scope, "beta", body="second memory")
+    store = Store(cfg, scope)
+    index.sync(cfg, scope, store, embeddings.build(cfg), rebuild=True)
+    _write_recall_log(recall_log_path, [["alpha", "beta"]] * 3)
+
+    report = dream.run(cfg, scope, store)
+
+    assert ("alpha", "beta", 3) in report.coretrieved
+
+
+def test_dream_ignores_coretrieved_pairs_below_threshold(
+    make_config, write_memory, tmp_path
+) -> None:
+    """A pair retrieved together fewer than the minimum times is not flagged."""
+    recall_log_path = tmp_path / "recall.log"
+    cfg = make_config(recall_log=recall_log_path, cooccurrence_min=3)
+    scope = cfg.scopes[0]
+    write_memory(scope, "alpha", body="first memory")
+    write_memory(scope, "beta", body="second memory")
+    store = Store(cfg, scope)
+    index.sync(cfg, scope, store, embeddings.build(cfg), rebuild=True)
+    _write_recall_log(recall_log_path, [["alpha", "beta"]] * 2)
+
+    report = dream.run(cfg, scope, store)
+
+    assert report.coretrieved == []
+
+
+def test_dream_ignores_coretrieved_pairs_already_linked(
+    make_config, write_memory, tmp_path
+) -> None:
+    """A pair that already wikilinks each other is not flagged again."""
+    recall_log_path = tmp_path / "recall.log"
+    cfg = make_config(recall_log=recall_log_path, cooccurrence_min=3)
+    scope = cfg.scopes[0]
+    write_memory(scope, "alpha", body="links to [[beta]]")
+    write_memory(scope, "beta", body="second memory")
+    store = Store(cfg, scope)
+    index.sync(cfg, scope, store, embeddings.build(cfg), rebuild=True)
+    _write_recall_log(recall_log_path, [["alpha", "beta"]] * 3)
+
+    report = dream.run(cfg, scope, store)
+
+    assert report.coretrieved == []
 
 
 def test_dream_writes_report(make_config, write_memory, tmp_path) -> None:
