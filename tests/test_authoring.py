@@ -376,3 +376,38 @@ def test_update_does_not_fold_a_long_description(make_config, write_memory) -> N
         line for line in path.read_text().splitlines() if "word" in line
     ]
     assert description_lines == [f"description: {long_hook.strip()}"]
+
+
+def test_memory_path_accepts_non_slug_stems(make_config, write_memory) -> None:
+    cfg = make_config(("global",))
+    scope = _global(cfg)
+    write_memory(scope, "café notes")
+
+    assert authoring.memory_path(scope, "café notes") is not None
+    assert authoring.update(scope, "café notes", pinned=True).ok
+
+
+def test_index_edits_touch_only_the_entry_itself(make_config, write_memory) -> None:
+    cfg = make_config(("global", "project"))
+    project, global_ = _project(cfg), _global(cfg)
+    for name in ("foo", "bar"):
+        write_memory(project, name, description=name)
+    index_path = project.memory_dir / "MEMORY.md"
+    index_path.write_text(
+        "- [Foo](foo.md) — foo\n- [Bar](bar.md) — see [Foo](foo.md)\n"
+    )
+
+    authoring.update(project, "foo", description="renamed")
+    assert index_path.read_text() == (
+        "- [Foo](foo.md) — renamed\n- [Bar](bar.md) — see [Foo](foo.md)\n"
+    )
+
+    assert authoring.move(project, global_, "foo").index_moved
+    assert index_path.read_text() == "- [Bar](bar.md) — see [Foo](foo.md)\n"
+
+    write_memory(project, "foo")
+    index_path.write_text(
+        "- [Foo](foo.md) — foo\n- [Bar](bar.md) — see [Foo](foo.md)\n"
+    )
+    assert authoring.forget(project, "foo").index_removed
+    assert index_path.read_text() == "- [Bar](bar.md) — see [Foo](foo.md)\n"

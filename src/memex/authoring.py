@@ -26,9 +26,12 @@ from .markdown import iter_memory_files, parse
 
 _MEMORY_INDEX = "MEMORY.md"
 _VALID_TYPES = ("user", "feedback", "project", "reference")
-# A memory is addressed by its file stem; anything else (path separators, a
-# leading dot) could reach outside the scope's directory or a hidden file.
-_FILE_STEM = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9_.-]*$")
+# Characters that would let a memory name reach outside its scope's directory.
+_PATH_CHARS = ("/", "\\", "\0")
+# A ``MEMORY.md`` entry: a list item whose first link is the entry's own target.
+# Only that leading link identifies the entry; links later in the hook text are
+# references to other memories.
+_INDEX_ENTRY = re.compile(r"^\s*[-*+]\s*\[[^\]]*\]\(([^)]+)\)")
 _FRONTMATTER = re.compile(r"^---\s*\n(.*?)\n---\s*\n?(.*)$", re.DOTALL)
 
 
@@ -137,10 +140,10 @@ def move(source: Scope, destination_scope: Scope, name: str) -> PromoteResult:
 def memory_path(scope: Scope, name: str) -> Path | None:
     """Return the file for memory ``name`` in ``scope``, or ``None`` if absent.
 
-    ``name`` is the file stem. A stem that could escape the directory, or that
-    names ``MEMORY.md`` or a hidden file, resolves to ``None``.
+    ``name`` is the file stem, as listed. A stem that could escape the directory,
+    or that names ``MEMORY.md`` or a hidden file, resolves to ``None``.
     """
-    if not _FILE_STEM.match(name):
+    if not name or name.startswith(".") or any(c in name for c in _PATH_CHARS):
         return None
     path = scope.memory_dir / f"{name}.md"
     if path not in iter_memory_files(scope.memory_dir):
@@ -357,18 +360,17 @@ def _slugify(name: str) -> str:
 def _move_index_line(src_index: Path, dst_index: Path, name: str) -> bool:
     """Transplant the ``MEMORY.md`` line for ``name`` from one index to another.
 
-    Matches the line by its ``(<name>.md)`` link target. Returns whether a line
-    was found and moved.
+    Matches the line by its leading ``(<name>.md)`` link target (see
+    :func:`_entry_link`). Returns whether a line was found and moved.
     """
     if not src_index.exists():
         return False
-    marker = f"({name}.md)"
     lines = src_index.read_text(encoding="utf-8").splitlines()
-    moved = [line for line in lines if marker in line]
+    moved = [line for line in lines if _entry_link(line, name) is not None]
     if not moved:
         return False
 
-    kept = [line for line in lines if marker not in line]
+    kept = [line for line in lines if _entry_link(line, name) is None]
     src_index.write_text("\n".join(kept).rstrip("\n") + "\n", encoding="utf-8")
 
     existing = (
@@ -380,13 +382,24 @@ def _move_index_line(src_index: Path, dst_index: Path, name: str) -> bool:
     return True
 
 
+def _entry_link(line: str, name: str) -> str | None:
+    """Return ``line``'s leading ``- [Title](name.md)`` if it is ``name``'s entry.
+
+    Returns ``None`` for any other line, including another memory's entry that
+    mentions ``name.md`` in its hook text.
+    """
+    match = _INDEX_ENTRY.match(line)
+    if match is None or match.group(1).strip() != f"{name}.md":
+        return None
+    return line[: match.end()]
+
+
 def _remove_index_line(index_path: Path, name: str) -> bool:
     """Drop the ``MEMORY.md`` line for ``name``; return whether one was found."""
     if not index_path.exists():
         return False
-    marker = f"({name}.md)"
     lines = index_path.read_text(encoding="utf-8").splitlines()
-    kept = [line for line in lines if marker not in line]
+    kept = [line for line in lines if _entry_link(line, name) is None]
     if len(kept) == len(lines):
         return False
     index_path.write_text("\n".join(kept).rstrip("\n") + "\n", encoding="utf-8")
@@ -401,13 +414,12 @@ def _replace_index_hook(index_path: Path, name: str, description: str) -> bool:
     """
     if not index_path.exists():
         return False
-    marker = f"({name}.md)"
     lines = index_path.read_text(encoding="utf-8").splitlines()
     found = False
     for number, line in enumerate(lines):
-        if marker not in line:
+        link = _entry_link(line, name)
+        if link is None:
             continue
-        link = line[: line.index(marker) + len(marker)]
         lines[number] = f"{link} — {description}"
         found = True
     if found:
