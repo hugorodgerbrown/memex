@@ -14,6 +14,7 @@ the current directory), unless ``--scope`` narrows them:
 * ``recall-log`` — show what memex offered the model on recent prompts.
 * ``promote`` — move a project memory into the global scope (interactive picker).
 * ``add`` — author a new memory into a scope (global with ``--scope global``).
+* ``mcp`` — serve the memory-management MCP server on stdio (for Claude Desktop).
 """
 
 from __future__ import annotations
@@ -133,6 +134,7 @@ def _build_parser() -> argparse.ArgumentParser:
         help="guarantee this memory a recall slot, bypassing ranking (capped by "
         "MEMEX_PINNED_MAX)",
     )
+    sub.add_parser("mcp", help="serve the memory-management MCP server on stdio")
     return parser
 
 
@@ -504,6 +506,11 @@ def main(argv: list[str] | None = None) -> int:
     args = _build_parser().parse_args(argv)
     if args.command == "maintain":
         return _cmd_maintain(config_module.load_all())
+    if args.command == "mcp":
+        from . import mcp_server
+
+        mcp_server.serve()
+        return 0
 
     cfg = config_module.load(cwd=os.getcwd())
     scopes = _active_scopes(cfg, args.scope)
