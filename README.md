@@ -162,7 +162,7 @@ a manual file move; it is rare enough not to warrant a command.)
 | Vector store | **sqlite-vec** | Embedded, single file, no daemon |
 | Keyword store | **SQLite FTS5** (BM25) | Same file; catches exact names / IDs |
 | Fusion | Reciprocal Rank Fusion (optionally IDF-weighted) | Combines meaning + lexical ranks |
-| Graph | `[[wikilink]]` edges | Free, no LLM; one-hop recall expansion |
+| Graph | `[[wikilink]]` edges | Free, no LLM; one-hop recall expansion; a project memory may link a global one |
 | Embeddings | **fastembed** (local ONNX) | Private, no API key; `hash` backend for tests |
 | Forgetting | Decay re-ranking | Strength falls; the fact is never deleted |
 | Consolidation | `dream` cycle (cron) | Dedup, broken links, salience — advisory only |
@@ -473,6 +473,10 @@ naming another by its exact slug without linking it — pairs the recall log sho
 being retrieved together often without either linking the other, memories
 missing from `MEMORY.md`, salience ranking) and updates salience scores, but
 never edits or deletes a memory file.
+
+A link resolves within its own scope, and a project memory's link also resolves
+against the global scope. A global memory cannot link a project memory: it
+surfaces in every project, so it must not depend on one.
 
 ### Did it run? — `memex health`
 

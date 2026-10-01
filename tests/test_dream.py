@@ -172,3 +172,40 @@ def test_dream_writes_report(make_config, write_memory, tmp_path) -> None:
     path = dream.write_report(scope, report, today="2026-06-26")
     assert path.exists()
     assert "Memex dream cycle" in path.read_text(encoding="utf-8")
+
+
+def test_dream_project_link_to_global_memory_resolves(
+    make_config, write_memory
+) -> None:
+    """A project memory linking a global memory is not a broken link."""
+    cfg = make_config(("global", "project"))
+    global_scope, project_scope = cfg.scopes
+    write_memory(global_scope, "use-tox", body="Always run tox before a PR.")
+    write_memory(
+        project_scope,
+        "ci-checklist",
+        body="See [[use-tox]] and [[does-not-exist]].",
+    )
+    store = Store(cfg, project_scope)
+    index.sync(cfg, project_scope, store, embeddings.build(cfg), rebuild=True)
+
+    report = dream.run(cfg, project_scope, store)
+
+    assert ("ci-checklist", "use-tox") not in report.broken_links
+    assert ("ci-checklist", "does-not-exist") in report.broken_links
+
+
+def test_dream_global_link_to_project_memory_is_broken(
+    make_config, write_memory
+) -> None:
+    """A global memory cannot depend on one project's memory."""
+    cfg = make_config(("global", "project"))
+    global_scope, project_scope = cfg.scopes
+    write_memory(project_scope, "snowdesk-only", body="Project fact.")
+    write_memory(global_scope, "general-rule", body="See [[snowdesk-only]].")
+    store = Store(cfg, global_scope)
+    index.sync(cfg, global_scope, store, embeddings.build(cfg), rebuild=True)
+
+    report = dream.run(cfg, global_scope, store)
+
+    assert ("general-rule", "snowdesk-only") in report.broken_links
