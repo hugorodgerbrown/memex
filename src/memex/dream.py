@@ -5,7 +5,8 @@ the critical path (cron / a scheduled routine) and:
 
 * flags near-duplicate memories that should probably be merged;
 * recomputes salience (access frequency + inbound graph links);
-* reports broken ``[[wikilinks]]`` and memories missing from ``MEMORY.md``;
+* reports broken ``[[wikilinks]]`` (a project memory may link a global one)
+  and memories missing from ``MEMORY.md``;
 * suggests ``[[wikilinks]]`` a memory's text names but does not yet link;
 * suggests ``[[wikilinks]]`` between memories the recall log shows being
   retrieved together often, whether or not either one's text names the other.
@@ -24,7 +25,7 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from . import recall_log
+from . import markdown, recall_log
 from .config import Config, Scope
 from .store import Store
 
@@ -163,13 +164,15 @@ def run(config: Config, scope: Scope, store: Store) -> DreamReport:
                 else:
                     report.duplicates.append(pair)
 
-    # Inbound link counts for salience, and broken-link detection.
+    # Inbound link counts for salience, and broken-link detection. A project
+    # memory may link a global one, so those names resolve too.
     inbound: dict[str, int] = {record["name"]: 0 for record in records}
+    resolvable = known | _global_names(config, scope)
     for record in records:
         for link in record["links"]:
             if link in inbound:
                 inbound[link] += 1
-            elif link not in known:
+            elif link not in resolvable:
                 report.broken_links.append((record["name"], link))
 
     # Salience = access frequency + inbound graph links. Persist and report.
@@ -190,6 +193,22 @@ def run(config: Config, scope: Scope, store: Store) -> DreamReport:
     )
     report.unindexed_in_memory_md = _missing_from_index_file(scope, known)
     return report
+
+
+def _global_names(config: Config, scope: Scope) -> set[str]:
+    """Return the global scope's memory names, for resolving a project's links.
+
+    Read from the Markdown rather than the global index, so the check holds even
+    when the global index has not been built. Empty for the global scope itself:
+    a global memory surfaces in every project, so it must not depend on one.
+    """
+    global_scope = config.scope("global")
+    if global_scope is None or scope.name == "global":
+        return set()
+    return {
+        markdown.parse(path).name
+        for path in markdown.iter_memory_files(global_scope.memory_dir)
+    }
 
 
 def _missing_from_index_file(scope: Scope, known: set[str]) -> list[str]:

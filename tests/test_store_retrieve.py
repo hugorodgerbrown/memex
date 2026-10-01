@@ -245,3 +245,51 @@ def test_resolve_supersessions_ignores_pairs_without_event_dates(
     )
 
     assert {h.name for h in hits} == {"dup-one", "dup-two"}
+
+
+def _two_scopes(
+    cfg: Config, write_memory: Callable[..., object], *, project_body: str
+) -> list[Store]:
+    """Index a global and a project scope; return their stores in that order."""
+    global_scope, project_scope = cfg.scopes
+    write_memory(global_scope, "beta", body="a lazy sleeping dog in the yard")
+    write_memory(global_scope, "gamma", body="entirely unrelated content about teapots")
+    write_memory(project_scope, "alpha", body=project_body)
+    stores = []
+    for scope in (global_scope, project_scope):
+        store = Store(cfg, scope)
+        index.sync(cfg, scope, store, embeddings.build(cfg), rebuild=True)
+        stores.append(store)
+    return stores
+
+
+def test_graph_expansion_follows_project_link_into_global(
+    make_config, write_memory
+) -> None:
+    """A project top hit's link to a global memory pulls that memory in."""
+    cfg = make_config(("global", "project"))
+    stores = _two_scopes(
+        cfg, write_memory, project_body="the quick brown fox jumps over [[beta]]"
+    )
+    hits = retrieve.retrieve(
+        cfg, stores, embeddings.build(cfg), "quick brown fox", k=1, expand_graph=True
+    )
+    by_name = {h.name: h for h in hits}
+    assert hits[0].name == "alpha"
+    assert by_name["beta"].scope == "global"
+    assert by_name["beta"].via == "graph:alpha"
+
+
+def test_graph_expansion_prefers_own_scope(make_config, write_memory) -> None:
+    """A link naming a memory in both scopes resolves in the top hit's scope."""
+    cfg = make_config(("global", "project"))
+    global_scope, project_scope = cfg.scopes
+    write_memory(project_scope, "beta", body="project-local beta about kettles")
+    stores = _two_scopes(
+        cfg, write_memory, project_body="the quick brown fox jumps over [[beta]]"
+    )
+    hits = retrieve.retrieve(
+        cfg, stores, embeddings.build(cfg), "quick brown fox", k=1, expand_graph=True
+    )
+    betas = [h for h in hits if h.name == "beta"]
+    assert [h.scope for h in betas] == ["project"]

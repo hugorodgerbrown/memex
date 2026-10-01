@@ -16,7 +16,8 @@ The retrieval pipeline, in order:
    strongly-relevant global memory can outrank a weakly-relevant project one and
    vice versa. Each hit is tagged with the scope it came from.
 4. Optionally pull in one hop of ``[[wikilink]]`` neighbours of the top hit
-   (within its own scope) so structured recall returns a connected cluster.
+   so structured recall returns a connected cluster. A link resolves in the top
+   hit's own scope first, then — for a project memory — in the global scope.
 5. Every scope's ``pinned: true`` memories are prepended ahead of the ranked
    hits, up to ``config.pinned_max`` total — a guaranteed core tier that never
    competes for a ranked slot (Letta/MemGPT's pinned core-memory blocks).
@@ -206,7 +207,7 @@ def retrieve(
     # Normalise to (store, id, score, multiplier, via) before optional expansion.
     selected: list[Candidate] = [(*item, "hybrid") for item in pool[:k]]
     if expand_graph and selected:
-        selected = _expand(selected)
+        selected = _expand(selected, stores)
     # Pinned memories are guaranteed a slot, ahead of the ranked/expanded hits.
     selected = pinned + selected
 
@@ -242,19 +243,29 @@ def retrieve(
     return hits
 
 
-def _expand(selected: list[Candidate]) -> list[Candidate]:
-    """Append one hop of graph neighbours of the top hit, within its scope."""
+def _expand(selected: list[Candidate], stores: list[Store]) -> list[Candidate]:
+    """Append one hop of graph neighbours of the top hit.
+
+    A link resolves in the top hit's own scope first; a project memory's link
+    that names no project memory falls through to the global scope.
+    """
     store, top_id, _score, _multiplier, _via = selected[0]
     top = store.hydrate(top_id)
-    present = {st.hydrate(mid)["name"] for st, mid, *_ in selected if st is store}
+    present = {(st, st.hydrate(mid)["name"]) for st, mid, *_ in selected}
+    lookup = [store]
+    if store.scope_name != "global":
+        lookup += [st for st in stores if st.scope_name == "global"]
 
     expanded = list(selected)
     for link in top["links"]:
-        if link in present:
-            continue
-        neighbour_id = store.id_for_name(link)
-        if neighbour_id is None:
-            continue
-        multiplier = store.decay_multiplier(neighbour_id)
-        expanded.append((store, neighbour_id, 0.0, multiplier, f"graph:{top['name']}"))
+        for target in lookup:
+            neighbour_id = target.id_for_name(link)
+            if neighbour_id is None:
+                continue
+            if (target, link) not in present:
+                multiplier = target.decay_multiplier(neighbour_id)
+                expanded.append(
+                    (target, neighbour_id, 0.0, multiplier, f"graph:{top['name']}")
+                )
+            break
     return expanded
