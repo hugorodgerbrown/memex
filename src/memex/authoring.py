@@ -3,25 +3,33 @@
 Scope is determined by *which directory* a memory file lives in: the global
 directory (``~/.claude/memory/``) or a project's directory. So promoting a
 project memory to global is a file move, and adding a global memory is a file
-write. This module does both, and keeps the human-facing ``MEMORY.md`` index in
-step with the move. It holds no embedding dependency — the caller re-indexes the
-affected scopes afterwards — and the interactive picker is driven through
+write. This module does both, edits and forgets existing memories, and keeps the
+human-facing ``MEMORY.md`` index in step with every change. It holds no
+embedding dependency — the caller re-indexes the affected scopes afterwards, or
+leaves it to the scheduled run — and the interactive picker is driven through
 injected ``ask``/``emit`` callables so the CLI wires ``input``/``print`` and the
 tests script the responses.
 """
 
 from __future__ import annotations
 
+import datetime as dt
 import re
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
+
+import yaml
 
 from .config import Config, Scope
 from .markdown import iter_memory_files, parse
 
 _MEMORY_INDEX = "MEMORY.md"
 _VALID_TYPES = ("user", "feedback", "project", "reference")
+# A memory is addressed by its file stem; anything else (path separators, a
+# leading dot) could reach outside the scope's directory or a hidden file.
+_FILE_STEM = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9_.-]*$")
+_FRONTMATTER = re.compile(r"^---\s*\n(.*?)\n---\s*\n?(.*)$", re.DOTALL)
 
 
 @dataclass
@@ -41,6 +49,28 @@ class PromoteResult:
     reason: str = ""  # when not ok: no-project-scope | not-found | conflict
     destination: Path | None = None
     index_moved: bool = False
+
+
+@dataclass
+class UpdateResult:
+    """Outcome of editing one existing memory."""
+
+    ok: bool
+    reason: str = ""  # when not ok: not-found | bad-frontmatter | no-change
+    path: Path | None = None
+    index_updated: bool = False
+
+
+@dataclass
+class ForgetResult:
+    """Outcome of forgetting one memory."""
+
+    ok: bool
+    reason: str = ""  # when not ok: not-found
+    archived_to: Path | None = None
+    index_removed: bool = False
+    # Memories in the same scope whose ``[[wikilinks]]`` now point at nothing.
+    linked_from: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -70,35 +100,149 @@ def list_project_memories(config: Config) -> list[MemoryEntry]:
 
 
 def promote(config: Config, name: str) -> PromoteResult:
-    """Move project memory ``name`` into the global scope.
-
-    Moves the Markdown file and transplants its ``MEMORY.md`` line. Re-indexing
-    (so the memory leaves the project index and enters the global one) is left to
-    the caller.
-    """
+    """Move memory ``name`` from the active project scope into the global scope."""
     project = config.scope("project")
     global_ = config.scope("global")
     if project is None or global_ is None:
         return PromoteResult(ok=False, reason="no-project-scope")
+    return move(project, global_, name)
 
-    source = project.memory_dir / f"{name}.md"
-    if not source.exists():
+
+def move(source: Scope, destination_scope: Scope, name: str) -> PromoteResult:
+    """Move memory ``name`` from ``source`` into ``destination_scope``.
+
+    Moves the Markdown file and transplants its ``MEMORY.md`` line. Re-indexing
+    (so the memory leaves one index and enters the other) is left to the caller.
+    """
+    source_path = memory_path(source, name)
+    if source_path is None:
         return PromoteResult(ok=False, reason="not-found")
 
-    destination = global_.memory_dir / f"{name}.md"
+    destination = destination_scope.memory_dir / f"{name}.md"
     if destination.exists():
         return PromoteResult(ok=False, reason="conflict")
 
     destination.parent.mkdir(parents=True, exist_ok=True)
-    destination.write_text(source.read_text(encoding="utf-8"), encoding="utf-8")
-    source.unlink()
+    destination.write_text(source_path.read_text(encoding="utf-8"), encoding="utf-8")
+    source_path.unlink()
 
     index_moved = _move_index_line(
-        project.memory_dir / _MEMORY_INDEX,
-        global_.memory_dir / _MEMORY_INDEX,
+        source.memory_dir / _MEMORY_INDEX,
+        destination_scope.memory_dir / _MEMORY_INDEX,
         name,
     )
     return PromoteResult(ok=True, destination=destination, index_moved=index_moved)
+
+
+def memory_path(scope: Scope, name: str) -> Path | None:
+    """Return the file for memory ``name`` in ``scope``, or ``None`` if absent.
+
+    ``name`` is the file stem. A stem that could escape the directory, or that
+    names ``MEMORY.md`` or a hidden file, resolves to ``None``.
+    """
+    if not _FILE_STEM.match(name):
+        return None
+    path = scope.memory_dir / f"{name}.md"
+    if path not in iter_memory_files(scope.memory_dir):
+        return None
+    return path
+
+
+def update(
+    scope: Scope,
+    name: str,
+    *,
+    description: str | None = None,
+    body: str | None = None,
+    mtype: str | None = None,
+    pinned: bool | None = None,
+) -> UpdateResult:
+    """Rewrite the given fields of memory ``name`` in place.
+
+    Fields left as ``None`` keep their current value; other frontmatter keys are
+    preserved. A changed description is mirrored into the ``MEMORY.md`` line.
+    """
+    path = memory_path(scope, name)
+    if path is None:
+        return UpdateResult(ok=False, reason="not-found")
+
+    raw = path.read_text(encoding="utf-8")
+    match = _FRONTMATTER.match(raw)
+    front_text, old_body = (match.group(1), match.group(2)) if match else ("", raw)
+    try:
+        front = yaml.safe_load(front_text) or {}
+    except yaml.YAMLError:
+        return UpdateResult(ok=False, reason="bad-frontmatter")
+    if not isinstance(front, dict):
+        return UpdateResult(ok=False, reason="bad-frontmatter")
+
+    original = dict(front)
+    front.setdefault("name", name)
+    if description is not None:
+        front["description"] = description
+    if mtype is not None:
+        metadata = front.get("metadata")
+        metadata = dict(metadata) if isinstance(metadata, dict) else {}
+        metadata["type"] = mtype if mtype in _VALID_TYPES else "reference"
+        front["metadata"] = metadata
+        front.pop("type", None)
+    if pinned is True:
+        front["pinned"] = True
+    elif pinned is False:
+        front.pop("pinned", None)
+    new_body = body.strip() if body is not None else old_body.strip()
+
+    if front == original and new_body == old_body.strip():
+        return UpdateResult(ok=False, reason="no-change", path=path)
+
+    # A wide line limit stops PyYAML folding a long description over lines.
+    rendered = yaml.safe_dump(
+        front,
+        sort_keys=False,
+        allow_unicode=True,
+        default_flow_style=False,
+        width=1_000_000,
+    )
+    path.write_text(f"---\n{rendered}---\n\n{new_body}\n", encoding="utf-8")
+
+    index_updated = False
+    if description is not None and description != original.get("description"):
+        index_updated = _replace_index_hook(
+            scope.memory_dir / _MEMORY_INDEX, name, description
+        )
+    return UpdateResult(ok=True, path=path, index_updated=index_updated)
+
+
+def forget(scope: Scope, name: str, *, now: dt.datetime | None = None) -> ForgetResult:
+    """Remove memory ``name`` from ``scope``, keeping a copy in its archive.
+
+    The file moves to ``<scope>/.memex/forgotten/<name>-<UTC timestamp>.md`` —
+    outside the indexed directory, so recall stops offering it at the next
+    re-index, but recoverable by moving it back. Its ``MEMORY.md`` line goes.
+    """
+    path = memory_path(scope, name)
+    if path is None:
+        return ForgetResult(ok=False, reason="not-found")
+
+    linked_from = [
+        other.stem
+        for other in iter_memory_files(scope.memory_dir)
+        if other != path and name in parse(other).links
+    ]
+
+    stamp = (now or dt.datetime.now(dt.UTC)).strftime("%Y%m%dT%H%M%SZ")
+    archive_dir = scope.db_path.parent / "forgotten"
+    archive_dir.mkdir(parents=True, exist_ok=True)
+    archived_to = archive_dir / f"{name}-{stamp}.md"
+    path.rename(archived_to)
+
+    index_removed = _remove_index_line(scope.memory_dir / _MEMORY_INDEX, name)
+    return ForgetResult(
+        ok=True,
+        archived_to=archived_to,
+        index_removed=index_removed,
+        linked_from=linked_from,
+    )
 
 
 def add(
@@ -234,6 +378,41 @@ def _move_index_line(src_index: Path, dst_index: Path, name: str) -> bool:
         "\n".join(existing + moved).strip("\n") + "\n", encoding="utf-8"
     )
     return True
+
+
+def _remove_index_line(index_path: Path, name: str) -> bool:
+    """Drop the ``MEMORY.md`` line for ``name``; return whether one was found."""
+    if not index_path.exists():
+        return False
+    marker = f"({name}.md)"
+    lines = index_path.read_text(encoding="utf-8").splitlines()
+    kept = [line for line in lines if marker not in line]
+    if len(kept) == len(lines):
+        return False
+    index_path.write_text("\n".join(kept).rstrip("\n") + "\n", encoding="utf-8")
+    return True
+
+
+def _replace_index_hook(index_path: Path, name: str, description: str) -> bool:
+    """Swap the hook text on ``name``'s ``MEMORY.md`` line for ``description``.
+
+    The link part (``- [Title](name.md)``) is kept; everything after it is
+    replaced with `` — description``. Returns whether a line was found.
+    """
+    if not index_path.exists():
+        return False
+    marker = f"({name}.md)"
+    lines = index_path.read_text(encoding="utf-8").splitlines()
+    found = False
+    for number, line in enumerate(lines):
+        if marker not in line:
+            continue
+        link = line[: line.index(marker) + len(marker)]
+        lines[number] = f"{link} — {description}"
+        found = True
+    if found:
+        index_path.write_text("\n".join(lines).rstrip("\n") + "\n", encoding="utf-8")
+    return found
 
 
 def _append_index_line(index_path: Path, slug: str, description: str) -> None:

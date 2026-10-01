@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+import datetime as dt
+
 from memex import authoring
 from memex.config import Config, Scope
+from memex.markdown import iter_memory_files
+from memex.markdown import parse as parse_memory
 
 
 def _global(cfg: Config) -> Scope:
@@ -246,3 +250,129 @@ def test_promoted_memory_is_searchable_after_reindex(make_config, write_memory) 
 
     scopes_with_hit = {hit.scope for hit in hits if hit.name == "tox-rule"}
     assert scopes_with_hit == {"global"}
+
+
+def test_update_rewrites_fields_and_index_line(make_config, write_memory) -> None:
+    cfg = make_config(("global",))
+    scope = _global(cfg)
+    path = write_memory(scope, "tone", description="old hook", body="old body")
+    path.write_text(
+        path.read_text().replace("---\n\n", "event_date: 2026-01-02\n---\n\n", 1)
+    )
+    (scope.memory_dir / "MEMORY.md").write_text(
+        "- [Tone](tone.md) — old hook\n- [Other](other.md) — other\n"
+    )
+
+    result = authoring.update(
+        scope, "tone", description="new hook", body="new body", pinned=True
+    )
+
+    assert result.ok
+    assert result.index_updated
+    memory = parse_memory(path)
+    assert memory.description == "new hook"
+    assert memory.body == "new body"
+    assert memory.pinned
+    # Keys the edit did not name survive the rewrite.
+    assert memory.event_date == "2026-01-02"
+    assert memory.mtype == "reference"
+    index = (scope.memory_dir / "MEMORY.md").read_text()
+    assert "- [Tone](tone.md) — new hook" in index
+    assert "- [Other](other.md) — other" in index
+
+
+def test_update_keeps_body_and_unpins(make_config, write_memory) -> None:
+    cfg = make_config(("global",))
+    scope = _global(cfg)
+    path = write_memory(scope, "core", body="keep me", pinned=True)
+
+    result = authoring.update(scope, "core", pinned=False, mtype="feedback")
+
+    assert result.ok
+    assert not result.index_updated
+    memory = parse_memory(path)
+    assert memory.body == "keep me"
+    assert not memory.pinned
+    assert memory.mtype == "feedback"
+
+
+def test_update_reports_no_change(make_config, write_memory) -> None:
+    cfg = make_config(("global",))
+    scope = _global(cfg)
+    write_memory(scope, "same", description="d", body="b")
+
+    result = authoring.update(scope, "same", description="d")
+
+    assert not result.ok
+    assert result.reason == "no-change"
+
+
+def test_memory_path_rejects_escapes_and_index(make_config, write_memory) -> None:
+    cfg = make_config(("global",))
+    scope = _global(cfg)
+    write_memory(scope, "real")
+    (scope.memory_dir / "MEMORY.md").write_text("- index\n")
+
+    assert authoring.memory_path(scope, "real") is not None
+    assert authoring.memory_path(scope, "../real") is None
+    assert authoring.memory_path(scope, "MEMORY") is None
+    assert authoring.memory_path(scope, ".hidden") is None
+    assert authoring.memory_path(scope, "ghost") is None
+
+
+def test_forget_archives_file_and_reports_broken_links(
+    make_config, write_memory
+) -> None:
+    cfg = make_config(("global",))
+    scope = _global(cfg)
+    write_memory(scope, "old-fact", body="stale")
+    write_memory(scope, "citer", body="see [[old-fact]]")
+    write_memory(scope, "bystander", body="unrelated")
+    (scope.memory_dir / "MEMORY.md").write_text(
+        "- [Old](old-fact.md) — stale\n- [Citer](citer.md) — cites\n"
+    )
+    now = dt.datetime(2026, 10, 1, 12, 0, tzinfo=dt.UTC)
+
+    result = authoring.forget(scope, "old-fact", now=now)
+
+    assert result.ok
+    assert not (scope.memory_dir / "old-fact.md").exists()
+    assert result.archived_to == (
+        scope.db_path.parent / "forgotten" / "old-fact-20261001T120000Z.md"
+    )
+    assert result.archived_to.read_text().endswith("stale\n")
+    assert result.index_removed
+    assert "old-fact.md" not in (scope.memory_dir / "MEMORY.md").read_text()
+    assert result.linked_from == ["citer"]
+    # The archive sits outside the indexed directory.
+    assert [p.stem for p in iter_memory_files(scope.memory_dir)] == [
+        "bystander",
+        "citer",
+    ]
+
+
+def test_move_between_named_scopes(make_config, write_memory) -> None:
+    cfg = make_config(("global", "-Users-me-Projects-app"))
+    project = cfg.scope("-Users-me-Projects-app")
+    assert project is not None
+    write_memory(project, "fact", body="b")
+
+    result = authoring.move(project, _global(cfg), "fact")
+
+    assert result.ok
+    assert (_global(cfg).memory_dir / "fact.md").exists()
+    assert not (project.memory_dir / "fact.md").exists()
+
+
+def test_update_does_not_fold_a_long_description(make_config, write_memory) -> None:
+    cfg = make_config(("global",))
+    scope = _global(cfg)
+    long_hook = "word " * 40
+    path = write_memory(scope, "long", description=long_hook.strip())
+
+    authoring.update(scope, "long", pinned=True)
+
+    description_lines = [
+        line for line in path.read_text().splitlines() if "word" in line
+    ]
+    assert description_lines == [f"description: {long_hook.strip()}"]

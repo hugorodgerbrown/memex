@@ -37,6 +37,7 @@ dependencies = [
     # invoke `uv run` — an optional extra would be dropped and recall would fail.
     # The offline `hash` backend (used by the tests) needs none of this.
     "fastembed>=0.4",
+    "mcp>=2.2",
 ]
 
 [project.urls]

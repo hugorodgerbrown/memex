@@ -114,6 +114,8 @@ The Markdown is the source of truth, so you manage memories as files:
 - **Demote without deleting**: leave it — decay lowers its recall strength the
   longer it goes unused, so stale memories sink on their own.
 - **Promote project → global**: see below.
+- **From Claude Desktop chat**: the [MCP server](#manage-memories-from-claude-desktop-chat-mcp)
+  lists, edits, promotes and forgets memories without a terminal.
 
 ### Choosing the scope
 
@@ -205,7 +207,45 @@ memex candidates          # list staged candidates awaiting review (non-interact
 memex accept <name>       # promote a staged candidate into its scope's memory dir
 memex add <slug>          # author a new memory (--scope global for a global one)
 memex promote [<slug>]    # move a project memory into global (interactive picker if no slug)
+memex mcp                 # serve the memory-management MCP server on stdio (Claude Desktop)
 ```
+
+## Manage memories from Claude Desktop chat (MCP)
+
+`memex mcp` runs a local MCP server on stdio. It manages memories that already
+exist; it has no tool for writing a new one. Register it in
+`~/Library/Application Support/Claude/claude_desktop_config.json`, under
+`mcpServers`, then restart Claude Desktop:
+
+```json
+"memex": { "command": "/Users/<you>/.local/bin/memex", "args": ["mcp"] }
+```
+
+Use the absolute path: Desktop does not start servers with your shell's `PATH`.
+The server runs on your machine and reaches only the memory directories, so
+claude.ai in a browser and the mobile apps cannot use it.
+
+| Tool | Does |
+|---|---|
+| `list_scopes` | global plus every project with memories, with counts |
+| `list_memories(scope)` | name, description, type, pinned, links, and recall count / last recalled / salience once indexed |
+| `read_memory(scope, name)` | the full file |
+| `search_memories(query, scope?, k?)` | hybrid search over the indexes; does not count as a recall |
+| `latest_dream_report(scope)` | the newest consolidation report (duplicates, broken links, salience) |
+| `update_memory(scope, name, description?, body?, type?, pinned?)` | rewrites only the fields passed; a new description is mirrored into `MEMORY.md` |
+| `promote_memory(project, name)` | moves a project memory and its `MEMORY.md` line into global |
+| `forget_memory(scope, name)` | moves the file to `<scope>/.memex/forgotten/<name>-<UTC stamp>.md`, drops its `MEMORY.md` line, and names memories whose `[[wikilinks]]` now break |
+
+A chat has no working directory, so every tool takes the scope by name:
+`global`, a project's directory name under `~/.claude/projects/`, its path, or
+the last path segment when only one project ends with it (`memex`).
+
+The tools change files only and never re-index. The scheduled `memex maintain`
+run picks the changes up, as does the Code tab's `Stop` hook for the scopes its
+session uses. Until then, recall and `search_memories` still reflect the old
+index: a forgotten memory can still be offered, with a path that no longer
+exists. A forgotten file is restored by moving it back from `forgotten/`
+without its timestamp suffix.
 
 ## Wire up the hooks (always-on context) — global
 
