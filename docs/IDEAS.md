@@ -410,3 +410,55 @@ parsed in `markdown.py` alongside the existing `event_date`/`pinned` fields; hav
 it flags as inferred rather than stated; surface the field, unused by ranking, in
 `memex list` — the same "parse and expose before wiring into retrieval" sequencing
 the OKF entry above proposes for its own fields.
+
+---
+
+## Silent staleness — flagging high-relevance memories that aged out with no contradiction
+
+**Source:** [agent-memory-staleness-audit](https://github.com/a-bhimava/agent-memory-staleness-audit)
+(2026), plus *STALE: Can LLM Agents Know When Their Memories Are No Longer Valid?*,
+arXiv:2605.06527 (May 2026), and *TEPA: Revoking Stale Memories for Conflict-Robust
+Language Agents*, arXiv:2608.07429 (August 2026). Mem0's *State of AI Agent Memory
+2026* survey names this the field's defining open problem for 2026: "a highly-retrieved
+memory about a user's employer stays accurate right up until it isn't, at which point
+it becomes confidently wrong rather than just outdated" — decay handles low-relevance
+memories, but staleness in high-relevance ones is unsolved.
+
+The staleness-audit tool scores each memory on three signals contradiction detectors
+structurally cannot see, because none of them require a second, conflicting memory to
+exist: **provenance** (age since write, source), **fact-type volatility** (a
+human-authored half-life per category — a job title drifts in months, a date of birth
+never), and **supersession without contradiction** — a newer entry sharing the same
+subject+predicate as an older one, even when the two don't textually disagree. A memory
+scoring high on staleness *and* still being retrieved is flagged `REVERIFY`; high
+staleness with no retrieval is `FORGET`; everything else is `FRESH`.
+
+**Why this fits Memex:** this is precisely the blind spot in `store.decay_multiplier`
+(`src/memex/store.py`). Recall strength is `max(recency, frequency)` — a memory that
+keeps getting retrieved stays near the decay ceiling by the `frequency` term alone,
+regardless of whether the fact it states is still true. A memory like "the project uses
+Poetry for dependency management" that was accurate for months and got cited constantly
+will *never* decay on its own once the codebase migrates to `uv` — nothing contradicts
+it, so `dream`'s `MEMEX_DEDUP_THRESHOLD` cosine check and the `event_date` supersession
+logic in `dream.py`/`retrieve.py` (which both require a *second*, similar memory to
+compare against) have nothing to fire on. Frequent citation is exactly what should make
+a stale memory more dangerous, not more durable — and today it does the opposite.
+
+**Why this is an idea rather than a first cut:** the audit tool's volatility table is
+hand-authored per fact type, which has no clean analogue in Memex's free-text Markdown
+memories (no subject/predicate/object triples to classify). A workable version would
+need either a coarse, per-`type` half-life (`feedback`/`project`/`reference` already
+exist as categories in `distill._VALID_TYPES` and could plausibly carry different
+default volatilities) or an LLM pass to estimate one per memory, which reopens the
+"judgement call for a small model" concern already flagged in the Hindsight entry
+above. It also needs a decision on where `REVERIFY` surfaces — a `dream` report section
+is the obvious low-risk landing spot, but prompting the user to re-confirm a fact mid-turn
+would be a much bigger behaviour change.
+
+**Concrete first step:** in `dream.py`, add a report section that cross-references
+`recall_log` access frequency (already read by `dream.run` for the co-occurrence
+wikilink suggestion) against memory age, and flags memories that are both old (well
+past `MEMEX_DECAY_HALF_LIFE`) and still being retrieved often — the `REVERIFY` case —
+without requiring a second, similar memory to exist. Land it as an advisory-only report
+line first, the same way bitemporal supersession and mentioned-but-unlinked detection
+both shipped before any query-time behaviour change.
