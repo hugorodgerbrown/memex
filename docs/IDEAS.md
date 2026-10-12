@@ -462,3 +462,38 @@ past `MEMEX_DECAY_HALF_LIFE`) and still being retrieved often — the `REVERIFY`
 without requiring a second, similar memory to exist. Land it as an advisory-only report
 line first, the same way bitemporal supersession and mentioned-but-unlinked detection
 both shipped before any query-time behaviour change.
+
+---
+
+## LycheeMemory V2 — segment-level distillation for sessions longer than the transcript cap
+
+**Source:** *LycheeMemory V2: Efficient Long-Term Memory for LLM Agents via Semantic
+Segment-Level Consolidation*, arXiv:2608.12990 (August 2026);
+<https://arxiv.org/pdf/2608.12990>  
+**Benchmark (authors' figures, single backbone):** 89.22% on LoCoMo and 92.20% on
+LongMemEval-S, with 86.0% / 75.9% fewer construction tokens than A-Mem.
+
+Rather than extracting after every turn, LycheeMemory V2 detects semantic boundaries
+in a conversation, groups the exchanges between them into segments, and encodes each
+*finished* segment once into context-independent typed records. Boundary-aware
+segments keep event and temporal evidence coherent where fixed-size windows split it.
+
+**Why this fits Memex:** `distill.condense_transcript` keeps only the last
+`_MAX_TRANSCRIPT_CHARS` (24,000) characters of a session, so in a long session
+everything before that tail is never seen by the model. Sessions often change topic
+midway, and the durable decisions are as likely to sit in the first half as the last.
+Segmenting would let one session yield several bounded model calls rather than one
+call over a truncated tail. It is complementary to the RecMem entry above: RecMem
+decides *whether* to spend a call; this decides *which part* of a long session each
+call sees.
+
+**Why this is an idea rather than a first cut:** it multiplies model calls per session
+(against the README's "not free" cost note), so it needs the RecMem-style gating first
+or a hard cap on segments per session. Boundary detection also needs a cheap local
+heuristic (embedding drift between consecutive user turns using the existing
+fastembed `Embedder`) whose threshold would want tuning on real transcripts.
+
+**Concrete first step:** make the truncation visible before changing it: have
+`distill.extract` log under `MEMEX_DISTILL_DEBUG` how many characters of the condensed
+transcript were dropped. That measures how often the cap actually bites on real
+sessions, and decides whether segmenting is worth building.
