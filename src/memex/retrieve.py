@@ -21,6 +21,11 @@ The retrieval pipeline, in order:
 5. Every scope's ``pinned: true`` memories are prepended ahead of the ranked
    hits, up to ``config.pinned_max`` total — a guaranteed core tier that never
    competes for a ranked slot (Letta/MemGPT's pinned core-memory blocks).
+
+A caller that injects hits into a context window trims the result with
+:func:`within_char_budget`, so a heavily-linked top hit cannot fan graph
+expansion out into an unbounded block on every prompt (TencentDB Agent Memory
+caps recall by item count *and* character budget for the same reason).
 """
 
 from __future__ import annotations
@@ -28,6 +33,7 @@ from __future__ import annotations
 import datetime as dt
 import math
 from collections import defaultdict
+from collections.abc import Callable
 from dataclasses import dataclass
 
 from .config import Config
@@ -241,6 +247,29 @@ def retrieve(
             store.touch(ids)
 
     return hits
+
+
+def within_char_budget(
+    hits: list[Hit], budget: int, cost: Callable[[Hit], int]
+) -> list[Hit]:
+    """Return the longest prefix of ``hits`` whose total ``cost`` fits ``budget``.
+
+    ``cost`` gives the rendered size of one hit in characters. Hits arrive in
+    priority order — pinned, then ranked, then graph neighbours — so trimming
+    from the tail drops graph neighbours first and pinned memories last. The
+    first hit is always kept, so a single oversized memory still recalls. A
+    ``budget`` of zero or less disables the cap.
+    """
+    if budget <= 0:
+        return hits
+    kept: list[Hit] = []
+    spent = 0
+    for hit in hits:
+        spent += cost(hit)
+        if kept and spent > budget:
+            break
+        kept.append(hit)
+    return kept
 
 
 def _expand(selected: list[Candidate], stores: list[Store]) -> list[Candidate]:

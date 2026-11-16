@@ -529,6 +529,7 @@ schedule, repo binding, and the exact prompt are in
 | `MEMEX_ADAPTIVE_RRF` | unset (off) | `1` to weight vector/keyword fusion by per-query IDF instead of a fixed 50/50 split |
 | `MEMEX_RESOLVE_SUPERSESSIONS` | unset (off) | `1` to drop a near-duplicate candidate at query time when another candidate's `event_date` supersedes it (same signal the dream cycle reports offline) |
 | `MEMEX_PINNED_MAX` | `5` | Cap on how many `pinned: true` memories (across scopes) are guaranteed a recall slot ahead of ranking |
+| `MEMEX_RECALL_CHAR_BUDGET` | `6000` | Cap, in characters, on the memories the `UserPromptSubmit` hook injects per prompt. Hits are kept in priority order (pinned, ranked, graph neighbours) until the next would overrun, so a heavily-linked top hit cannot fan graph expansion out into an unbounded block; the first hit is always kept. `0` disables the cap |
 | `MEMEX_DECAY_HALF_LIFE` | `30` | Days; recency half-life |
 | `MEMEX_DECAY_FLOOR` / `_CEILING` | `0.3` / `1.5` | Decay multiplier bounds |
 | `MEMEX_DEDUP_THRESHOLD` | `0.92` | Cosine similarity for dup flagging |

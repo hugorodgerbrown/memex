@@ -98,6 +98,7 @@ class Config:
     adaptive_rrf: bool
     resolve_supersessions: bool
     pinned_max: int
+    recall_char_budget: int
     decay_half_life_days: float
     decay_floor: float
     decay_ceiling: float
@@ -218,6 +219,7 @@ def _with_tunables(scopes: list[Scope]) -> Config:
         adaptive_rrf=os.environ.get("MEMEX_ADAPTIVE_RRF", "0") == "1",
         resolve_supersessions=os.environ.get("MEMEX_RESOLVE_SUPERSESSIONS", "0") == "1",
         pinned_max=int(os.environ.get("MEMEX_PINNED_MAX", "5")),
+        recall_char_budget=int(os.environ.get("MEMEX_RECALL_CHAR_BUDGET", "6000")),
         decay_half_life_days=float(os.environ.get("MEMEX_DECAY_HALF_LIFE", "30")),
         decay_floor=float(os.environ.get("MEMEX_DECAY_FLOOR", "0.3")),
         decay_ceiling=float(os.environ.get("MEMEX_DECAY_CEILING", "1.5")),
