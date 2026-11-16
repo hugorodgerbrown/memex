@@ -52,6 +52,7 @@ def make_config(tmp_path: Path) -> Callable[..., Config]:
         adaptive_rrf: bool = False,
         resolve_supersessions: bool = False,
         pinned_max: int = 5,
+        recall_char_budget: int = 6000,
         cooccurrence_min: int = 3,
         recall_log: Path | None = None,
     ) -> Config:
@@ -67,6 +68,7 @@ def make_config(tmp_path: Path) -> Callable[..., Config]:
             adaptive_rrf=adaptive_rrf,
             resolve_supersessions=resolve_supersessions,
             pinned_max=pinned_max,
+            recall_char_budget=recall_char_budget,
             decay_half_life_days=30.0,
             decay_floor=0.3,
             decay_ceiling=1.5,

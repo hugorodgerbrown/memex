@@ -4,6 +4,8 @@ Claude Code invokes this with the hook payload on stdin (including ``cwd``). We
 resolve the active scopes for that directory, run layered hybrid recall across
 the global and project stores, and print the top memories to stdout — Claude Code
 appends that to the model's context for the turn (the "always-on context" feature).
+The block is capped at ``MEMEX_RECALL_CHAR_BUDGET`` characters of memories, so
+graph expansion around a heavily-linked hit cannot crowd the context window.
 
 The hook degrades silently: any failure prints nothing and exits 0, so a broken
 index or a slow embedder never blocks the user from sending a prompt.
@@ -23,6 +25,23 @@ from memex import embeddings, recall_log, retrieve  # noqa: E402
 from memex.store import Store  # noqa: E402
 
 
+def _hit_block(hit: retrieve.Hit) -> list[str]:
+    """Render one recalled memory as its heading, description, and snippet."""
+    lines = [f"### {hit.name} [{hit.scope}/{hit.mtype}]"]
+    if hit.description:
+        lines.append(hit.description)
+    snippet = hit.body.strip().splitlines()
+    if snippet:
+        lines.append(" ".join(snippet)[:400])
+    lines.append("")
+    return lines
+
+
+def _hit_cost(hit: retrieve.Hit) -> int:
+    """Return the characters ``hit`` adds to the context block, newlines included."""
+    return sum(len(line) + 1 for line in _hit_block(hit))
+
+
 def _render(hits: list[retrieve.Hit]) -> str:
     """Render recalled memories as a compact, scope-tagged context block.
 
@@ -38,13 +57,7 @@ def _render(hits: list[retrieve.Hit]) -> str:
         "",
     ]
     for hit in hits:
-        lines.append(f"### {hit.name} [{hit.scope}/{hit.mtype}]")
-        if hit.description:
-            lines.append(hit.description)
-        snippet = hit.body.strip().splitlines()
-        if snippet:
-            lines.append(" ".join(snippet)[:400])
-        lines.append("")
+        lines.extend(_hit_block(hit))
     lines.append(
         "When a memory above shapes your answer, cite it inline as "
         "`[memex:<name>]` (e.g. `[memex:use-tox]`) so the reader can see which "
@@ -72,6 +85,8 @@ def main() -> int:
             return 0
         embedder = embeddings.build(cfg)
         hits = retrieve.retrieve(cfg, stores, embedder, prompt)
+        # Cap the injected block's size; the log records only what was injected.
+        hits = retrieve.within_char_budget(hits, cfg.recall_char_budget, _hit_cost)
         for store in stores:
             store.close()
     except Exception:

@@ -293,3 +293,39 @@ def test_graph_expansion_prefers_own_scope(make_config, write_memory) -> None:
     )
     betas = [h for h in hits if h.name == "beta"]
     assert [h.scope for h in betas] == ["project"]
+
+
+def _hit(name: str) -> retrieve.Hit:
+    """Build a bare :class:`retrieve.Hit` for exercising the character budget."""
+    return retrieve.Hit(
+        name=name,
+        path=f"{name}.md",
+        mtype="reference",
+        description="",
+        body="",
+        links=[],
+        score=0.0,
+        multiplier=1.0,
+        via="hybrid",
+        scope="global",
+    )
+
+
+def test_char_budget_keeps_the_longest_fitting_prefix() -> None:
+    """Hits are kept in order until the next one would overrun the budget."""
+    hits = [_hit("a"), _hit("b"), _hit("c")]
+    kept = retrieve.within_char_budget(hits, 250, lambda _hit: 100)
+    assert [hit.name for hit in kept] == ["a", "b"]
+
+
+def test_char_budget_always_keeps_the_first_hit() -> None:
+    """A single oversized memory still recalls rather than yielding nothing."""
+    hits = [_hit("big"), _hit("small")]
+    kept = retrieve.within_char_budget(hits, 10, lambda hit: len(hit.name) * 100)
+    assert [hit.name for hit in kept] == ["big"]
+
+
+def test_char_budget_of_zero_disables_the_cap() -> None:
+    """A non-positive budget returns every hit untouched."""
+    hits = [_hit("a"), _hit("b")]
+    assert retrieve.within_char_budget(hits, 0, lambda _hit: 10_000) == hits
