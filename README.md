@@ -530,6 +530,7 @@ schedule, repo binding, and the exact prompt are in
 | `MEMEX_RESOLVE_SUPERSESSIONS` | unset (off) | `1` to drop a near-duplicate candidate at query time when another candidate's `event_date` supersedes it (same signal the dream cycle reports offline) |
 | `MEMEX_PINNED_MAX` | `5` | Cap on how many `pinned: true` memories (across scopes) are guaranteed a recall slot ahead of ranking |
 | `MEMEX_DECAY_HALF_LIFE` | `30` | Days; recency half-life |
+| `MEMEX_DECAY_STABILITY` | unset (off) | `1` to let access count stretch the half-life (`× (1 + ln(1 + count))`) instead of pinning a ten-times-recalled memory at the ceiling for ever, so well-used memories fade slowly but still fade once unused (FadeMem-style importance-modulated decay) |
 | `MEMEX_DECAY_FLOOR` / `_CEILING` | `0.3` / `1.5` | Decay multiplier bounds |
 | `MEMEX_DEDUP_THRESHOLD` | `0.92` | Cosine similarity for dup flagging |
 | `MEMEX_COOCCURRENCE_MIN` | `3` | Times two unlinked memories must appear together in the recall log before the dream cycle suggests a `[[wikilink]]` between them |
