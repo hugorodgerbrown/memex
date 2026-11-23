@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import datetime as dt
+import math
+import sqlite3
 from collections.abc import Callable
 
 from memex import embeddings, index, retrieve
@@ -58,6 +61,62 @@ def test_touch_increments_access_count(make_config, write_memory) -> None:
     store.touch([store.id_for_name("alpha")])
     counts = {row["name"]: row["access_count"] for row in store.access_summary()}
     assert counts["alpha"] == 1
+
+
+def _age_access(cfg: Config, name: str, *, days: float, count: int) -> None:
+    """Backdate ``name``'s last access by ``days`` and set its access count."""
+    when = dt.datetime.now(dt.UTC) - dt.timedelta(days=days)
+    with sqlite3.connect(cfg.scopes[0].db_path) as db:
+        db.execute(
+            "UPDATE memory_stats SET last_accessed=?, access_count=? "
+            "WHERE memory_id=(SELECT id FROM memories WHERE name=?)",
+            (when.isoformat(), count, name),
+        )
+
+
+def test_default_decay_frequency_saturates_regardless_of_age(
+    make_config, write_memory
+) -> None:
+    """By default ten accesses hold a memory at the ceiling however long ago."""
+    cfg = make_config()
+    store = _index(cfg, write_memory)
+    _age_access(cfg, "alpha", days=365, count=10)
+    multiplier = store.decay_multiplier(store.id_for_name("alpha"))
+    assert abs(multiplier - cfg.decay_ceiling) < 1e-9
+
+
+def test_decay_stability_lets_a_well_used_memory_fade(
+    make_config, write_memory
+) -> None:
+    """With stability on, frequency slows decay but no longer stops it."""
+    cfg = make_config(decay_stability=True)
+    store = _index(cfg, write_memory)
+    _age_access(cfg, "alpha", days=365, count=10)
+    _age_access(cfg, "beta", days=365, count=0)
+    _age_access(cfg, "gamma", days=30, count=0)
+
+    used_old = store.decay_multiplier(store.id_for_name("alpha"))
+    unused_old = store.decay_multiplier(store.id_for_name("beta"))
+    unused_month = store.decay_multiplier(store.id_for_name("gamma"))
+
+    assert used_old < cfg.decay_ceiling - 0.5
+    assert unused_old < used_old
+    midpoint = cfg.decay_floor + (cfg.decay_ceiling - cfg.decay_floor) / 2
+    # A never-accessed memory still halves at exactly the configured half-life.
+    assert abs(unused_month - midpoint) < 0.01
+
+
+def test_decay_stability_stretches_half_life_by_access_count(
+    make_config, write_memory
+) -> None:
+    """Ten accesses stretch the half-life by ``1 + ln(11)``."""
+    cfg = make_config(decay_stability=True)
+    store = _index(cfg, write_memory)
+    half_life = cfg.decay_half_life_days * (1.0 + math.log1p(10))
+    _age_access(cfg, "alpha", days=half_life, count=10)
+    multiplier = store.decay_multiplier(store.id_for_name("alpha"))
+    midpoint = cfg.decay_floor + (cfg.decay_ceiling - cfg.decay_floor) / 2
+    assert abs(multiplier - midpoint) < 0.01
 
 
 def test_sync_active_indexes_then_noops(make_config, write_memory) -> None:

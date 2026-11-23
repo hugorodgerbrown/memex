@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import datetime as dt
 import json
+import math
 import re
 import sqlite3
 
@@ -269,6 +270,13 @@ class Store:
         Recently accessed *or* frequently accessed memories surface (toward the
         ceiling); long-unused ones dampen toward the floor. The underlying fact
         is never deleted — only its recall strength falls (Mem0's model).
+
+        By default strength is ``max(recency, frequency)``, so a memory accessed
+        ten times sits at the ceiling for ever, however long ago those accesses
+        were. With ``config.decay_stability`` set, frequency instead *stretches*
+        the half-life — ``half_life * (1 + ln(1 + access_count))`` — so a
+        well-used memory fades more slowly but still fades once it stops being
+        recalled (FadeMem's importance-modulated decay rate; the spacing effect).
         """
         row = self._db.execute(
             "SELECT created_at, last_accessed, access_count FROM memory_stats "
@@ -282,9 +290,15 @@ class Store:
         now = dt.datetime.now(dt.UTC)
         age_days = (now - reference).total_seconds() / 86400.0 if reference else 0.0
 
-        recency = 0.5 ** (max(age_days, 0.0) / self._config.decay_half_life_days)
-        frequency = min(row["access_count"] / 10.0, 1.0)
-        strength = max(recency, frequency)
+        age_days = max(age_days, 0.0)
+        if self._config.decay_stability:
+            stability = 1.0 + math.log1p(row["access_count"])
+            half_life = self._config.decay_half_life_days * stability
+            strength = 0.5 ** (age_days / half_life)
+        else:
+            recency = 0.5 ** (age_days / self._config.decay_half_life_days)
+            frequency = min(row["access_count"] / 10.0, 1.0)
+            strength = max(recency, frequency)
 
         span = self._config.decay_ceiling - self._config.decay_floor
         return self._config.decay_floor + span * strength
